@@ -1272,8 +1272,26 @@ async function render() {
   bind();
 }
 
+// tabele / hartă mai late decât ecranul: indiciu „glisează” + umbră la margine (dispare când ajungi la capăt)
+function scrollHints() {
+  document.querySelectorAll('.tablewrap, .mapscroll').forEach(el => {
+    const upd = () => {
+      const can = el.scrollWidth > el.clientWidth + 4;
+      el.classList.toggle('can-scroll', can);
+      el.classList.toggle('at-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 4);
+      let h = el.previousElementSibling?.classList.contains('swipe-hint') ? el.previousElementSibling : null;
+      if (can && !h) { h = document.createElement('div'); h.className = 'swipe-hint'; h.innerHTML = '<span aria-hidden="true">⇆</span> Glisează stânga–dreapta ca să vezi tot'; el.before(h); }
+      if (h) h.hidden = !can;
+    };
+    if (!el.dataset.sh) { el.dataset.sh = '1'; el.addEventListener('scroll', upd, { passive: true });
+      if (el.classList.contains('mapscroll')) el.scrollLeft = el.scrollWidth; } // pe hartă arătăm direct locurile de vizitatori (în dreapta)
+    upd();
+  });
+}
+addEventListener('resize', () => scrollHints());
 function bind() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  requestAnimationFrame(scrollHints);
   on('login-form', 'submit', onLoginSubmit);
   on('pw-form', 'submit', onSetPassword);
   on('veh-form', 'submit', onVehAdd);
