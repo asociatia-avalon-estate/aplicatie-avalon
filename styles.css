@@ -356,3 +356,6 @@ table.veh{min-width:900px}
 .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .msg .att{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;white-space:normal}
 .msg .att img{width:104px;height:104px;object-fit:cover;border-radius:8px;display:block;border:1px solid rgba(0,0,0,.15);background:#fff}
+.fchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);font-size:14px;text-decoration:none;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fchip .ico{width:16px;height:16px;flex:none}
+.msg .att{align-items:flex-start}
