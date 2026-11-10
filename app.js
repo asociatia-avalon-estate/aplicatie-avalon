@@ -501,7 +501,7 @@ async function pageVehicles() {
   const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
     <td style="white-space:nowrap">${v.expires_at ? fmtDate(v.expires_at) : '<span class="muted">Nu expiră</span>'}</td><td><span class="chip ${s[1]}">${s[0]}</span></td>
     <td>${v.inside ? '<span class="chip ok"><span class="dot"></span>Da</span>' : '<span class="muted">Nu</span>'}</td>
-    <td>${v.inside ? '<span class="small muted">nu se poate șterge cât e în complex</span>' : v.source === 'app' ? `<button class="btn quiet sm" data-act="veh-del" data-id="${v.id}" aria-label="Șterge ${esc(v.plate)}">${ic('x')}</button>` : '<span class="small muted">din Metrici</span>'}</td></tr>`; }).join('');
+    <td>${v.inside ? '<span class="small muted">nu se poate șterge cât e în complex</span>' : `<button class="btn quiet sm" data-act="veh-del" data-id="${v.id}" data-p="${esc(v.plate)}" aria-label="Șterge ${esc(v.plate)}">${ic('x')}</button>`}</td></tr>`; }).join('');
   return `<div class="head"><div class="stack" style="gap:4px"><h1>Vehiculele mele</h1><p class="muted">Mașinile tale din lista barierei.</p></div></div>
   ${accounts.length ? `<div class="note" style="background:var(--accent-soft)">${ic('parking')}<span><b style="color:var(--accent)">${inside} din ${spaces} ${spaces === 1 ? 'loc ocupat' : 'locuri ocupate'}.</b> Pot sta în complex în același timp maximum ${spaces} ${spaces === 1 ? 'mașină' : 'mașini'}; poți avea mai multe înregistrate. Când toate locurile sunt ocupate, celelalte mașini adăugate din aplicație sunt oprite temporar la barieră și pornesc singure când iese o mașină. „În complex” se actualizează automat de la barieră.</span></div>` : '<div class="note"><span>Unitatea ta nu are încă un loc de parcare în evidență. Dacă ai loc de parcare, scrie administrației.</span></div>'}
   <div class="card tablewrap"><table class="rep veh"><thead><tr><th>Număr</th><th>Cont / parcare</th><th>Expirare</th><th>Stare</th><th>În complex</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">Nicio mașină înregistrată.</td></tr>'}</tbody></table></div>
@@ -776,7 +776,7 @@ document.addEventListener('click', async e => {
   if (a === 'pk-plate') { readPk(); S.pk.plate = b.dataset.p; showPk(); return; }
   if (a === 'pk-next') { readPk(); const { s: s0, e: e0 } = pkRange(), dur = e0 - s0, ns = new Date(b.dataset.k), ne = new Date(ns.getTime() + dur); S.pk.date = dateInput(ns); S.pk.from = hhmm(ns); S.pk.endDate = dateInput(ne); S.pk.to = hhmm(ne); if (S.pk.endDate !== S.pk.date) S.pk.mode = 'zile'; showPk(); return; }
   if (a === 'veh-del') {
-    if (!confirm('Ștergi mașina din listă?')) return;
+    if (!confirm(`Ștergi mașina ${b.dataset.p || ''}? Numărul se scoate și din barieră, deci nu va mai putea intra în complex. O poți adăuga din nou oricând.`)) return;
     const { error } = await sb.from('vehicles').delete().eq('id', b.dataset.id);
     if (error) return toast(errMsg(error));
     S.cache.myPlates = null; toast('Mașina a fost ștearsă.'); render(); return;
