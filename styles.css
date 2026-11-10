@@ -227,6 +227,8 @@ table.veh{min-width:900px}
 .contact .name{font-size:20px}
 .cline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cline .v{font-variant-numeric:tabular-nums}
+.cline a.v{color:var(--ink);text-decoration:none;font-weight:400}
+.cline a.v:hover{text-decoration:underline;text-decoration-color:var(--line)}
 
 .sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line)}
 .sw:first-of-type{border-top:0}
