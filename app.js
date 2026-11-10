@@ -2,6 +2,10 @@
 // Date și login: Supabase. Cheia de mai jos e cheia PUBLICĂ (sigură în browser);
 // accesul la date e controlat în baza de date prin Row Level Security.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { startI18n, setLang, isEN } from './i18n.js?v=1';
+
+// buton RO / EN (limba se ține minte în browser)
+const langBtn = () => `<div class="langbtn" role="group" aria-label="Limba / Language" data-notr>${ic('globe')}<button type="button" data-act="setlang" data-l="ro" aria-pressed="${!isEN()}">RO</button><button type="button" data-act="setlang" data-l="en" aria-pressed="${isEN()}">EN</button></div>`;
 
 const SUPABASE_URL = 'https://jeourriidsohbptrppac.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_LcS1AfZDqXco4wfHCsgMMQ_80AhjovO';
@@ -41,6 +45,7 @@ function errMsg(e) {
 }
 
 const ICON = {
+  globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
   ticket: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4zM10 5v14',
   parking: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM9 17V7h4a3 3 0 0 1 0 6H9',
@@ -121,7 +126,7 @@ function loginView() {
     <label class="f">Codul primit<input id="lg-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
     <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se verifică…' : 'Continuă'}</button>
     <button class="btn quiet" type="button" data-act="login-code">Altă adresă / cod nou</button>`;
-  return `<div class="login"><div class="card">
+  return `<div class="login"><div class="card"><div style="align-self:flex-end;margin-bottom:-8px">${langBtn()}</div>
     ${brand(52)}
     <div><h2>${head[0]}</h2><p class="muted small">${head[1]}</p></div>
     <form id="login-form" class="stack">${form}<p class="err" id="lg-err" role="alert"></p></form>
@@ -161,7 +166,7 @@ async function onLoginSubmit(e) {
 }
 const needsPassword = () => S.mustSetPassword || !S.session?.user?.user_metadata?.has_password;
 function setPasswordView() {
-  return `<div class="login"><div class="card">
+  return `<div class="login"><div class="card"><div style="align-self:flex-end;margin-bottom:-8px">${langBtn()}</div>
     ${brand(52)}
     <div><h2>Creează-ți parola</h2><p class="muted small">Data viitoare intri direct cu emailul <b>${esc(S.session.user.email)}</b> și parola, fără cod.</p></div>
     <form id="pw-form" class="stack">
@@ -205,10 +210,10 @@ function shell(inner, wide = false) {
   const tabHTML = tabs.map(([r, l, i]) => `<a href="#${r}" ${S.route === r ? 'aria-current="page"' : ''}>${ic(i)}<span>${l}</span></a>`).join('') + `<button type="button" data-act="more">${ic('menu')}<span>Mai mult</span></button>`;
   return `<div class="app">
     <aside class="side">${brand(46)}<nav class="nav" aria-label="Meniu">${nav}</nav>
-      <div class="role"><span class="small">${esc(fullName(S.me))}</span><span class="small muted">${esc(S.units.map(u => u.code).join(', ') || '')}</span><button class="btn quiet sm" data-act="logout">${ic('out')} Ieșire</button></div>
+      <div class="role"><span class="small">${esc(fullName(S.me))}</span><span class="small muted">${esc(S.units.map(u => u.code).join(', ') || '')}</span><button class="btn quiet sm" data-act="logout" data-en="Sign out">${ic('out')} Ieșire</button></div>
     </aside>
     <div class="main">
-      <header class="top">${brand(38)}<span class="demo-pill">Versiune de test</span></header>
+      <header class="top">${brand(38)}<span class="demo-pill">Versiune de test</span>${langBtn()}</header>
       <main class="content ${wide ? 'wide' : ''}">${inner}</main>
     </div>
     <nav class="tabbar" aria-label="Meniu rapid">${tabHTML}</nav>
@@ -325,7 +330,7 @@ async function visitorLinkCard() {
 
 /* pagina publică a vizitatorului (#v-<token>) – nu cere login */
 async function pagePublic(token) {
-  const wrap = inner => `<div class="pub"><div class="wrap"><div class="row between">${brand(48)}</div>${inner}</div></div>`;
+  const wrap = inner => `<div class="pub"><div class="wrap"><div class="row between">${brand(48)}${langBtn()}</div>${inner}</div></div>`;
   if (S.pubDone) {
     const r = S.pubDone;
     return wrap(`<div class="card stack"><span class="chip ok" style="align-self:flex-start">Rezervare confirmată</span><h2>Ai loc în parcarea de vizitatori</h2>
@@ -1325,6 +1330,7 @@ document.addEventListener('click', async e => {
   const a = b.dataset.act;
   if (await pagesClick(a, b)) return;
   if (a === 'logout') { await sb.auth.signOut(); S.me = null; S.units = []; S.cache = {}; location.hash = ''; return; }
+  if (a === 'setlang') { setLang(b.dataset.l); return; }
   if (a === 'login-code') { S.loginStep = 'email'; render(); }
   if (a === 'login-pass') { S.loginStep = 'parola'; render(); }
   if (a === 'reload') render();
@@ -1333,7 +1339,7 @@ document.addEventListener('click', async e => {
   if (a === 'more') {
     document.querySelector('.sheet')?.remove();
     const sh = document.createElement('div'); sh.className = 'sheet';
-    sh.innerHTML = `<nav class="nav">${menu().map(([r, l, i]) => `<a href="#${r}">${ic(i)}<span>${l}</span></a>`).join('')}<a href="#" data-act="logout">${ic('out')}<span>Ieșire</span></a></nav>`;
+    sh.innerHTML = `<nav class="nav">${menu().map(([r, l, i]) => `<a href="#${r}">${ic(i)}<span>${l}</span></a>`).join('')}<a href="#" data-act="logout">${ic('out')}<span data-en="Sign out">Ieșire</span></a></nav>`;
     document.body.appendChild(sh);
     setTimeout(() => document.addEventListener('click', function off(ev) { if (!sh.contains(ev.target) || ev.target.closest('a')) { sh.remove(); document.removeEventListener('click', off); } }), 0);
   }
@@ -1369,6 +1375,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('keydown', e => { const t = e.target.closest?.('[data-act="pick-spot"]'); if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openPk(t.dataset.s); } if (e.key === 'Escape' && S.pk) { S.pk = null; document.getElementById('pk-wrap')?.remove(); } });
 
 /* ---------- pornire ---------- */
+startI18n();
 if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'invite'; history.replaceState(null, '', location.pathname); }
 parseHash();
 let started = false;
