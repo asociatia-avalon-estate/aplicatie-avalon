@@ -284,6 +284,9 @@ function mapSVG({ busy = new Set(), sel = null, interactive = true } = {}) {
     const act = interactive ? `role="button" tabindex="0" data-act="pick-spot" data-s="${s}"` : 'role="img"';
     g += `<g class="sp ${st}" ${act} aria-label="${lbl}"><title>${lbl}</title><rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="6"/>${st === 'busy' ? carSVG(x, y, sw, sh) : ''}<text x="${x + sw / 2}" y="${y + sh / 2}" dominant-baseline="central" text-anchor="middle" transform="rotate(90 ${x + sw / 2} ${y + sh / 2})">${s}</text></g>`;
   });
+  // locul de lângă V7 e al PK și nu se folosește (doar desenat)
+  { const x = x0 + LEFT_N * (sw + sg), y = ay - sh - 2, lbl = 'PK7, nu se poate rezerva';
+    g += `<g class="sp off" role="img" aria-label="${lbl}"><title>${lbl}</title><rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="6"/><text x="${x + sw / 2}" y="${y + sh / 2}" dominant-baseline="central" text-anchor="middle" transform="rotate(90 ${x + sw / 2} ${y + sh / 2})">PK7</text></g>`; }
   const by = ay + ah + sh + 16;
   g += `<rect x="${x0}" y="${by}" width="${cw}" height="72" rx="10" class="m-bld"/><text x="${x0 + cw / 2}" y="${by + 44}" class="m-bl" text-anchor="middle">Bloc A1b</text></g></g>`;
   return `<svg class="map" viewBox="0 0 ${H} ${W}" role="group" aria-label="Harta parcării pentru vizitatori"><g transform="translate(0 ${W}) rotate(-90)">${g}</g></svg>`;
