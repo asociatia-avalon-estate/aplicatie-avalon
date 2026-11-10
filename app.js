@@ -825,7 +825,7 @@ async function onDoc(e) {
 
 /* contacte */
 async function pageContacts() {
-  const { data, error } = await sb.from('contacts').select('*').order('section').order('sort').order('role'); if (error) throw error;
+  const { data, error } = await sb.from('contacts').select('*').order('sort').order('role'); if (error) throw error;
   S.cache.contacts = data || [];
   const groups = [...new Set(S.cache.contacts.map(c => c.section))];
   const card = c => `<div class="card contact"><span class="role-l">${esc(c.role)}</span><span class="name">${esc(c.name)}</span>
