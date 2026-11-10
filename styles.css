@@ -336,3 +336,16 @@ table.veh{min-width:900px}
 @media (prefers-reduced-motion:reduce){.swipe-hint span{animation:none}}
 /* casetele verzi deschise ies în evidență și pe fundalul nou */
 .card[style*="--accent-soft"],.note[style*="--accent-soft"]{border:1px solid #b5d3c1}
+/* ferestrele (rezervare loc, adaugă mașină etc.) pe telefon: mai compacte; titlul cu „X” și butoanele de jos rămân mereu vizibile */
+@media (max-width:620px){
+  .modal{padding:14px 14px 0;gap:10px;border-radius:14px}
+  .modal h2{font-size:26px}
+  .pkmodal{width:calc(100vw - 20px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}
+  .pkmodal > .row.between:first-child{position:sticky;top:-14px;z-index:2;background:var(--paper);margin:-14px -14px 0;padding:12px 14px 6px}
+  .pkmodal > .row:last-child{position:sticky;bottom:0;z-index:2;background:var(--paper);margin:0 -14px;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+  .modal:not(.pkmodal){padding-bottom:14px}
+  .pkmodal .f input,.pkmodal .f select{padding:7px 9px;font-size:16px}
+  .pkmodal .fg3{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .pkmodal .small{font-size:14px}
+  .pkmodal .chip{padding:3px 10px}
+}
