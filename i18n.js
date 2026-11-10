@@ -211,6 +211,14 @@ const EN = {
 "Informări": "Notices",
 "Intervalul ales e deja în trecut.": "The chosen time is already in the past.",
 "Ora sosirii a trecut. Alege ora de acum sau mai târziu.": "The arrival time has passed. Choose the current time or later.",
+"Adaugă poze": "Add photos",
+"# poză aleasă": "# photo selected",
+"# poze alese": "# photos selected",
+"Maximum # poze; se trimit primele #.": "Maximum # photos; the first # will be sent.",
+"Se trimit pozele…": "Uploading photos…",
+"Scrie un mesaj sau adaugă o poză.": "Write a message or add a photo.",
+"Poza nu se poate citi.": "The photo can't be read.",
+"Poza nu se poate pregăti.": "The photo can't be prepared.",
 "Intrare": "Entry",
 "Intrare manuală": "Manual entry",
 "Intrare marcată.": "Entry marked.",
@@ -613,6 +621,8 @@ const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iul
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const mon = m => { const i = LUNI.indexOf(String(m).toLowerCase()); return i < 0 ? m : MONTHS[i]; };
 const RULES = [
+  [/^Nu am putut urca pozele: (.+)$/, 'The photos could not be uploaded: $1'],
+  [/^Tichetul a fost trimis, dar pozele nu: (.+)$/, 'The ticket was sent, but the photos were not: $1'],
   [/^Acces în aplicație pentru (.+)$/, 'App access for $1'],
   [/^Invitația a plecat la (.+)\.$/, 'The invitation was sent to $1.'],
   [/^Am trimis un link de confirmare la (.+)$/, 'We sent a confirmation link to $1'],
