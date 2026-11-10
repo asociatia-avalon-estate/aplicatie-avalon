@@ -301,8 +301,9 @@ table.veh{min-width:900px}
 .occ-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-left:62px}
 .msg.sys{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:14px;padding:4px 10px}
 .msg.loc{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--gold)}
-.msg.adm{background:var(--accent-soft);border:1px solid #c9e0d3;border-left:4px solid var(--accent)}
-.msg.adm .who{color:var(--accent);font-weight:700}
+.msg.adm{background:var(--accent);color:#fff;border:1px solid var(--accent);border-left:4px solid #123f31}
+.msg.adm .who{color:#e3efe8;font-weight:700}
+.msg.adm a{color:#fff}
 .msg.internal{background:var(--gold-soft);border-left-style:dashed}
 .userrow td{vertical-align:top}
 .tab-row{display:flex;gap:6px;flex-wrap:wrap}
