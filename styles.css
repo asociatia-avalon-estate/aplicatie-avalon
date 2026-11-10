@@ -1,6 +1,6 @@
 /* Layout: app shell, sidebar on desktop, bottom tab bar on phone. Brand taken from the Avalon Estate logo contest page. */
 :root{
-  --bg:#f2f4f1; --paper:#ffffff; --ink:#15302b; --muted:#56685f; --line:#d5ddd6;
+  --bg:#f2f4f1; --page:#e3e9e4; --paper:#ffffff; --ink:#15302b; --muted:#56685f; --line:#d5ddd6;
   --accent:#1f6b52; --accent-ink:#ffffff; --accent-soft:#e3efe8;
   --gold:#b9821c; --gold-soft:#f6ecd6; --road:#c4cbc6;
   --ok:#2c7a4b; --ok-soft:#e1f1e6; --warn:#a8650b; --warn-soft:#fbeed6; --bad:#b33a2b; --bad-soft:#f8e3df;
@@ -11,7 +11,7 @@
 :root,:root[data-theme="dark"]{color-scheme:light}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.45}
+body{background:var(--page);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.45}
 button,input,select,textarea{font:inherit;color:inherit}
 h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.05;margin:0;text-wrap:balance;letter-spacing:.01em}
 h1{font-size:44px} h2{font-size:30px} h3{font-size:24px}
@@ -39,8 +39,8 @@ p{margin:0}
 .seg button[aria-pressed="true"]{background:var(--paper);box-shadow:var(--shadow);color:var(--accent)}
 
 .main{min-width:0;display:flex;flex-direction:column}
-.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;align-items:center;gap:12px;padding-block:12px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--page);display:flex;align-items:center;gap:12px;padding-block:12px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--page)}
 .top .brand{display:none}
 .gsearch{flex:1;max-width:560px;display:flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:7px 12px}
 .gsearch input{border:0;background:transparent;outline:none;flex:1;min-width:0}
@@ -62,8 +62,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:11px;padding:8px 15px;cursor:pointer;text-decoration:none;white-space:nowrap}
 .btn:hover{filter:brightness(1.07)}
-.btn.ghost{background:transparent;color:var(--accent)}
-.btn.quiet{background:transparent;border-color:var(--line);color:var(--ink)}
+.btn.ghost{background:var(--paper);color:var(--accent)}
+.btn.quiet{background:var(--paper);border-color:#c3cec6;color:var(--ink)}
 .btn.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
 .btn.sm{padding:4px 10px;font-size:15px;border-radius:9px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
