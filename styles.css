@@ -310,3 +310,24 @@ table.veh{min-width:900px}
 .side .brand,.login .brand{flex-direction:column;align-items:center;text-align:center;gap:6px}
 .side .brand img{height:auto!important;width:140px!important}
 .login .brand img{height:auto!important;width:160px!important}
+
+/* ecrane mici: tabele și hartă mai compacte, cu indiciu de glisare */
+.swipe-hint{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:4px 10px;margin:0 0 6px;width:max-content;max-width:100%}
+.swipe-hint span{font-size:16px;animation:swipe 1.6s ease-in-out infinite}
+@keyframes swipe{0%,100%{transform:translateX(-3px)}50%{transform:translateX(3px)}}
+.tablewrap.can-scroll,.mapscroll.can-scroll{scrollbar-width:thin;scrollbar-color:var(--accent) var(--accent-soft);
+  background:linear-gradient(to left,var(--paper) 30%,transparent) right/40px 100% no-repeat local,
+             radial-gradient(farthest-side at 100% 50%,rgba(21,48,43,.22),transparent) right/14px 100% no-repeat scroll;}
+.tablewrap.can-scroll.at-end,.mapscroll.can-scroll.at-end{background:none}
+.tablewrap::-webkit-scrollbar,.mapscroll::-webkit-scrollbar{height:8px}
+.tablewrap::-webkit-scrollbar-thumb,.mapscroll::-webkit-scrollbar-thumb{background:var(--accent);border-radius:8px}
+.tablewrap::-webkit-scrollbar-track,.mapscroll::-webkit-scrollbar-track{background:var(--accent-soft);border-radius:8px}
+@media (max-width:860px){
+  table.rep{font-size:14px;min-width:480px}
+  .rep th{font-size:13px;padding:6px}
+  .rep td{padding:7px 6px}
+  table.veh{min-width:640px}
+  table.veh .plate,table.veh .pl{transform:scale(.9);transform-origin:left center}
+  .map{min-width:470px}
+}
+@media (prefers-reduced-motion:reduce){.swipe-hint span{animation:none}}
