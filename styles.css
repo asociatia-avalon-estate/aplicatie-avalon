@@ -359,3 +359,4 @@ table.veh{min-width:900px}
 .fchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);font-size:14px;text-decoration:none;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fchip .ico{width:16px;height:16px;flex:none}
 .msg .att{align-items:flex-start}
+.attn{display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:13px;margin-right:8px;white-space:nowrap}.attn .ico{width:15px;height:15px}
