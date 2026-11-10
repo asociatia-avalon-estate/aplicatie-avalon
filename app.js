@@ -233,6 +233,12 @@ const dateInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getD
 const lei = n => `${(Math.round(n * 100) / 100).toFixed(2).replace('.', ',')} lei`;
 const hTxt = h => { const x = Math.round(h * 100) / 100; return `${String(x).replace('.', ',')} ${x === 1 ? 'oră' : 'ore'}`; };
 let TARIF = null;
+/* Tarif vizitatori: lei_pe_ora (fără TVA); în fiecare perioadă de 24 h de la sosire se taxează maximum ore_plafon ore (5 lei × 10 h = 50 lei / 24 h). */
+function costParcare(h, t = TARIF || {}) {
+  const rate = t.lei_pe_ora ?? 5, cap = t.ore_plafon ?? 10, zile = Math.floor(h / 24), rest = h - zile * 24;
+  return (zile * Math.min(24, cap) + Math.min(rest, cap)) * rate;
+}
+const TVA_TXT = 'fără TVA';
 async function tarif() { if (TARIF) return TARIF; const { data } = await sb.from('settings').select('value').eq('key', 'tarif').maybeSingle(); TARIF = data?.value || { lei_pe_ora: 5 }; return TARIF; }
 const clashes = (o, s, e) => new Date(o.starts_at).getTime() - GAP_MS < e.getTime() + GAP_MS && s.getTime() - GAP_MS < new Date(o.ends_at).getTime() + GAP_MS;
 
@@ -321,11 +327,12 @@ function pkStatusHTML() {
   if (e - s > 7 * 86400000) return '<p class="err">Poți rezerva maximum 7 zile.</p>';
   if (e <= new Date()) return '<p class="err">Intervalul ales e deja în trecut.</p>';
   const c = (S.cache.occ || []).filter(o => o.spot_code === p.spot && clashes(o, s, e));
-  if (!c.length) return `<div class="note" style="background:var(--ok-soft)"><span><b style="color:var(--ok)">Locul ${p.spot} e liber</b> în intervalul ales.</span></div>`;
+  if (!c.length) return `<div class="note" style="background:var(--ok-soft)"><span><b style="color:var(--ok)">Locul ${p.spot} e liber</b> în intervalul ales. Cost estimat: <b>${lei(costParcare((e - s) / 3600000))}</b> ${TVA_TXT}.</span></div>`;
   const nk = nextFree(p.spot, s, e - s);
   return `<div class="note" style="background:var(--bad-soft)"><span><b style="color:var(--bad)">Locul ${p.spot} e ocupat</b> ${c.map(o => `${fmtDT(o.starts_at)}–${hhmm(o.ends_at)}`).join(', ')}. Între două rezervări rămâne o pauză de 1 oră. Primul interval liber începe ${fmtDT(nk)}. <button type="button" class="btn ghost sm" data-act="pk-next" data-k="${nk.toISOString()}">Mută rezervarea acolo</button></span></div>`;
 }
 async function pkModalHTML() {
+  await tarif();
   const p = S.pk;
   if (!S.cache.myPlates) {
     const { data } = await sb.from('vehicles').select('plate, active').eq('person_id', S.me.id);
@@ -389,7 +396,7 @@ async function pageHistory() {
   const { data, error } = await sb.from('reservations').select('*').in('unit_code', codes).eq('status', 'activa').order('starts_at', { ascending: false }).limit(300);
   if (error) throw error;
   const now = new Date(), H = r => (new Date(r.ends_at) - new Date(r.starts_at)) / 3600000;
-  const cost = r => Math.max(0, H(r) - (t.ore_gratuite || 0)) * (t.lei_pe_ora || 0);
+  const cost = r => costParcare(H(r), t);
   const up = data.filter(r => new Date(r.ends_at) > now).reverse(), past = data.filter(r => new Date(r.ends_at) <= now);
   const row = (r, canCancel) => `<div class="item"><span class="grow stack" style="gap:2px"><span>${fmtDT(r.starts_at)} → ${dateInput(new Date(r.starts_at)) === dateInput(new Date(r.ends_at)) ? hhmm(r.ends_at) : fmtDT(r.ends_at)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · rezervat prin link' : ''} · ${esc(r.unit_code)}</span></span>${plateHTML(r.plate)}
     <span class="hcost"><span class="small muted">${canCancel ? 'rezervat ' : ''}${hTxt(H(r))}</span><b>${canCancel ? '≈ ' : ''}${lei(cost(r))}</b></span>
@@ -397,7 +404,7 @@ async function pageHistory() {
   const tot = (l, label, est) => { const h = l.reduce((a, r) => a + H(r), 0), c = l.reduce((a, r) => a + cost(r), 0); return `<div class="tot"><span><b>${label}</b> <span class="muted small">· ${l.length} ${l.length === 1 ? 'rezervare' : 'rezervări'}</span></span><span class="row" style="gap:16px"><span>${hTxt(h)}</span><b style="font-size:20px">${est ? '≈ ' : ''}${lei(c)}</b></span></div>`; };
   const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
   const byMonth = {}; past.forEach(r => { const d = new Date(r.starts_at), k = `${LUNI[d.getMonth()]} ${d.getFullYear()}`; (byMonth[k] ||= []).push(r); });
-  return `<div class="head"><div class="stack" style="gap:4px"><h1>Rezervările mele</h1><p class="muted">Rezervările viitoare și cele trecute, cu orele și costul (${t.lei_pe_ora} lei/oră). Deocamdată se afișează orele rezervate; orele reale de la barieră se adaugă după legătura cu Metrici. Suma apare pe întreținere.</p></div><a class="btn" href="#parcare">${ic('plus')} Rezervare nouă</a></div>
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Rezervările mele</h1><p class="muted">Rezervările viitoare și cele trecute, cu orele și costul (${t.lei_pe_ora ?? 5} lei/oră ${TVA_TXT}, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei pentru fiecare 24 de ore). Deocamdată se afișează orele rezervate; orele reale de la barieră se adaugă după legătura cu Metrici. Suma apare pe întreținere.</p></div><a class="btn" href="#parcare">${ic('plus')} Rezervare nouă</a></div>
   <div class="card stack"><h3>Urmează (${up.length})</h3><div class="list">${up.map(r => row(r, true)).join('') || '<p class="muted">Nicio rezervare viitoare.</p>'}</div>${up.length ? tot(up, 'Total estimat', true) : ''}</div>
   <div class="card stack"><h3>Trecute (${past.length})</h3>${Object.keys(byMonth).length ? Object.entries(byMonth).map(([m, l]) => `<h4 class="muted" style="margin:6px 0 0;text-transform:capitalize">${m}</h4><div class="list">${l.map(r => row(r, false)).join('')}</div>${tot(l, 'Total ' + m, false)}`).join('') : '<p class="muted">Încă nimic.</p>'}</div>`;
 }
