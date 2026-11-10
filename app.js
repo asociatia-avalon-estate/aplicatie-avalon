@@ -233,9 +233,9 @@ const dateInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getD
 const lei = n => `${(Math.round(n * 100) / 100).toFixed(2).replace('.', ',')} lei`;
 const hTxt = h => { const x = Math.round(h * 100) / 100; return `${String(x).replace('.', ',')} ${x === 1 ? 'oră' : 'ore'}`; };
 let TARIF = null;
-/* Tarif vizitatori: lei_pe_ora (fără TVA); în fiecare perioadă de 24 h de la sosire se taxează maximum ore_plafon ore (5 lei × 10 h = 50 lei / 24 h). */
+/* Tarif vizitatori: lei_pe_ora (fără TVA); în fiecare perioadă de 24 h de la sosire se taxează fiecare oră începută, maximum ore_plafon ore (5 lei × 10 h = 50 lei / 24 h). */
 function costParcare(h, t = TARIF || {}) {
-  const rate = t.lei_pe_ora ?? 5, cap = t.ore_plafon ?? 10, zile = Math.floor(h / 24), rest = h - zile * 24;
+  const rate = t.lei_pe_ora ?? 5, cap = t.ore_plafon ?? 10, zile = Math.floor(h / 24 + 1e-9), rest = Math.max(0, Math.ceil(h - zile * 24 - 1e-9));
   return (zile * Math.min(24, cap) + Math.min(rest, cap)) * rate;
 }
 const TVA_TXT = 'fără TVA';
