@@ -744,10 +744,10 @@ async function pageTickets() {
    <p class="muted small">${(data || []).length}${(data || []).length === 300 ? '+ (se afișează cele mai recente 300 – folosește căutarea)' : ''} tichete</p></div>`;
 }
 /* fișiere la tichete: pozele se micșorează în telefon (max 1920×1080, JPEG ~150–300 KB); restul (PDF, Word, Excel) se urcă așa cum sunt, max 10 MB.
-   Bucket privat „tichete/<id tichet>/”; numele fișierului rămâne în cale după „~”. */
+   Bucket privat „tichete/<id tichet>/”; numele fișierului rămâne în cale după „<cod>_”. */
 const FILE_MAX = 6, FILE_MB = 10, FILE_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt';
 const isImgPath = p => /\.(jpe?g|png|webp|gif)$/i.test(p);
-const fileName = p => decodeURIComponent((p.split('/').pop() || '').replace(/^[^~]*~/, ''));
+const fileName = p => (p.split('/').pop() || '').replace(/^[a-z0-9]{10,}_/, '');
 async function shrinkPhoto(file) {
   let src;
   try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
@@ -768,7 +768,7 @@ async function uploadFiles(ticketId, input) {
     const img = /^image\//.test(f.type) && !/gif|svg/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
     if (!img && f.size > FILE_MB * 1048576) throw new Error(`Fișierul ${f.name} are peste ${FILE_MB} MB.`);
     const body = img ? await shrinkPhoto(f) : f, name = img ? safeName(f.name).replace(/\.[^.]*$/, '') + '.jpg' : safeName(f.name);
-    const path = `${ticketId}/${stamp()}~${name}`;
+    const path = `${ticketId}/${stamp()}_${name}`;
     const { error } = await sb.storage.from('tichete').upload(path, body, { contentType: img ? 'image/jpeg' : (f.type || 'application/octet-stream') });
     if (error) throw error;
     paths.push(path);
