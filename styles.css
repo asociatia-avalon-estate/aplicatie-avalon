@@ -300,7 +300,10 @@ table.veh{min-width:900px}
 .occ-bar i{position:absolute;top:0;bottom:0;background:var(--bad);opacity:.75}
 .occ-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-left:62px}
 .msg.sys{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:14px;padding:4px 10px}
-.msg.internal{background:var(--gold-soft)}
+.msg.loc{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--gold)}
+.msg.adm{background:var(--accent-soft);border:1px solid #c9e0d3;border-left:4px solid var(--accent)}
+.msg.adm .who{color:var(--accent);font-weight:700}
+.msg.internal{background:var(--gold-soft);border-left-style:dashed}
 .userrow td{vertical-align:top}
 .tab-row{display:flex;gap:6px;flex-wrap:wrap}
 .side .brand,.login .brand{flex-direction:column;align-items:center;text-align:center;gap:6px}
