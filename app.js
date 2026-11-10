@@ -511,12 +511,12 @@ function vehModal() {
     <label class="f">Program de acces<select id="vh-sched"><option value="oricand">Oricând</option><option value="program">Program de lucru</option><option value="weekend">Weekend</option></select></label>
     <label class="f">De când<input id="vh-start" type="datetime-local" value="${d}"></label>
     <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;cursor:pointer"><input id="vh-never" type="checkbox" checked style="width:18px;height:18px;margin:0"> Nu expiră</label>
-    <label class="f" id="vh-exp-wrap" hidden>Expiră la<input id="vh-exp" type="datetime-local" value="${d.slice(0, 10)}T23:59"></label></div>
+    <label class="f" id="vh-exp-wrap" style="display:none">Expiră la<input id="vh-exp" type="datetime-local" value="${d.slice(0, 10)}T23:59"></label></div>
    <p class="muted small">Mașina intră în contul tău de parcare și bariera o recunoaște în câteva secunde, în perioada aleasă. Pentru o mașină temporară (de exemplu a unui musafir care stă câteva zile) debifează „Nu expiră” și alege data.</p>
    <p class="err" id="vh-err"></p>
    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button></div></form>`, w => {
     w.querySelector('#veh-form').addEventListener('submit', onVehAdd);
-    w.querySelector('#vh-never').addEventListener('change', e => { w.querySelector('#vh-exp-wrap').hidden = e.target.checked; });
+    w.querySelector('#vh-never').addEventListener('change', e => { w.querySelector('#vh-exp-wrap').style.display = e.target.checked ? 'none' : ''; });
   });
 }
 async function onVehAdd(e) {
