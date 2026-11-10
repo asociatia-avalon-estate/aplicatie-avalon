@@ -1,4 +1,4 @@
-// Aplicația Asociației de Proprietari Avalon Estate – v0.1
+// Aplicația Asociației de Proprietari Avalon Estate – v0.4 (legată la Metrici prin API)
 // Date și login: Supabase. Cheia de mai jos e cheia PUBLICĂ (sigură în browser);
 // accesul la date e controlat în baza de date prin Row Level Security.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
@@ -30,7 +30,7 @@ function toast(msg) {
 }
 function errMsg(e) {
   const m = e?.message || String(e);
-  if (e?.code === '23P01' || /fara_suprapunere_cu_pauza/.test(m)) return 'Locul e ocupat în intervalul ales (între două rezervări trebuie să rămână o pauză de 1 oră). Alege alt loc sau altă oră.';
+  if (e?.code === '23P01' || /fara_suprapunere/.test(m)) return 'Locul e ocupat în intervalul ales. Alege alt loc sau altă oră.';
   if (/max_7_zile/.test(m)) return 'O rezervare poate dura cel mult 7 zile.';
   if (/interval_valid/.test(m)) return 'Ora de sfârșit trebuie să fie după ora de început.';
   if (/Token has expired|invalid/i.test(m) && S.loginStep === 'code') return 'Codul nu e corect sau a expirat. Cere un cod nou.';
@@ -57,6 +57,8 @@ const ICON = {
   out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
   car: 'M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 13h18M7 16h.01M17 16h.01'
 };
 const ic = (n, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[n]}"/></svg>`;
@@ -225,7 +227,7 @@ async function pageHome() {
 /* parcare – hartă, rezervare în fereastră, istoric, vehicule
    Locurile de pe hartă sunt ORIENTATIVE: după rezervare vizitatorul poate parca pe orice loc liber de vizitatori. */
 const SPOTS_N = 15, LEFT_N = 7, ALL_SPOTS = Array.from({ length: SPOTS_N }, (_, i) => 'V' + (i + 1));
-const GAP_MS = 30 * 60000; // 30 min înainte + 30 min după = pauză de 1 oră între rezervări pe același loc
+const GAP_MS = 0; // fără pauză între rezervări: orele se taxează după intrarea/ieșirea reală la barieră
 const ORIENT = 'Locul ales e orientativ: după rezervare, vizitatorul poate parca pe orice loc liber marcat pentru vizitatori.';
 const hhmm = d => fmtTime(d);
 const roundUp30 = d => { const x = new Date(d); x.setSeconds(0, 0); const m = x.getMinutes(); if (m === 0) return x; x.setMinutes(m <= 30 ? 30 : 60); return x; };
@@ -240,7 +242,13 @@ function costParcare(h, t = TARIF || {}) {
 }
 const TVA_TXT = 'fără TVA';
 async function tarif() { if (TARIF) return TARIF; const { data } = await sb.from('settings').select('value').eq('key', 'tarif').maybeSingle(); TARIF = data?.value || { lei_pe_ora: 5 }; return TARIF; }
-const clashes = (o, s, e) => new Date(o.starts_at).getTime() - GAP_MS < e.getTime() + GAP_MS && s.getTime() - GAP_MS < new Date(o.ends_at).getTime() + GAP_MS;
+const clashes = (o, s, e) => new Date(o.starts_at).getTime() < e.getTime() && s.getTime() < new Date(o.ends_at).getTime();
+// ore taxate: din momentul intrării la barieră până la ieșire (sau acum, dacă e încă în parcare); fără intrare → orele rezervate (estimare) sau 0 dacă n-a venit
+function resHours(r, now = new Date()) {
+  if (r.entered_at) return { h: Math.max(0, (new Date(r.exited_at || now) - new Date(r.entered_at)) / 3600000), real: true };
+  if (new Date(r.ends_at) <= now && ['trimis', 'sters'].includes(r.metrici_state)) return { h: 0, real: true, noShow: true };
+  return { h: (new Date(r.ends_at) - new Date(r.starts_at)) / 3600000, real: false };
+}
 
 function carSVG(x, y, w, h) {
   const cw = Math.min(w * .62, 24), ch = Math.min(h * .84, 42), l = x + (w - cw) / 2, t = y + (h - ch) / 2, r = l + cw, b = t + ch, cx = x + w / 2, f = t + ch * .3, k = b - ch * .2;
@@ -295,11 +303,72 @@ async function pageParking() {
     <div class="mapinfo">
       <div class="stat"><span class="muted small">Libere acum</span><span class="n">${free}<span class="muted" style="font-size:24px"> / ${SPOTS_N}</span></span></div>
       <div class="legend" style="flex-direction:column;gap:6px"><span><i style="background:var(--paper);border:1.5px dashed var(--muted)"></i>liber acum</span><span><i style="background:var(--bad-soft)"></i>ocupat acum (se poate rezerva pentru mai târziu)</span><span><i style="background:var(--line)"></i>administrație și PK (nu se rezervă)</span></div>
-      <p class="muted small">Maximum 3 rezervări active pe apartament. Între două rezervări rămâne 1 oră liberă, ca vizitatorul următor să găsească loc.</p>
+      <p class="muted small">Maximum 3 rezervări active pe apartament. Bariera recunoaște numărul vizitatorului cu o oră înainte de sosire; la ieșire numărul se scoate din barieră. Se taxează orele reale petrecute în parcare.</p>
       ${S.units.length ? '' : '<p class="err">Nu ai nicio unitate legată de cont, deci nu poți rezerva încă.</p>'}
     </div></div>
   </div>
+  ${S.units.length ? await visitorLinkCard() : ''}
   <div class="card stack"><h3>Ocupare acum</h3><div class="occgrid">${occList}</div></div>`;
+}
+
+/* link pentru vizitatori: vizitatorul își face singur rezervarea, fără cont */
+const pubURL = t => `${location.origin}${location.pathname}#v-${t}`;
+async function visitorLinkCard() {
+  const unit = S.cache.linkUnit || S.units[0].code;
+  if (!S.cache.vlink || S.cache.vlink.unit !== unit) {
+    const { data, error } = await sb.rpc('my_visitor_link', { p_unit: unit, p_new: false });
+    if (error) return `<div class="card"><p class="err">${esc(errMsg(error))}</p></div>`;
+    S.cache.vlink = { unit, token: data };
+  }
+  const url = pubURL(S.cache.vlink.token);
+  return `<div class="card stack"><div class="row between"><h3>Linkul tău pentru vizitatori</h3>${ic('link')}</div>
+    ${S.units.length > 1 ? `<label class="f">Unitatea<select id="vl-unit">${S.units.map(u => `<option ${u.code === unit ? 'selected' : ''}>${esc(u.code)}</option>`).join('')}</select></label>` : ''}
+    <p class="muted small">Linkul e doar al unității ${esc(unit)}. Trimite-l pe WhatsApp cui vine la tine (părinți, prieteni, meseriași). Își rezervă singuri un loc și își scriu numărul mașinii, fără cont. Rezervarea apare la tine, iar numărul ajunge automat în barieră.</p>
+    <div class="linkbox"><code>${esc(url)}</code><button class="btn sm" type="button" data-act="copy" data-t="${esc(url)}">${ic('copy')} Copiază</button></div>
+    <div class="row between"><a class="btn ghost sm" href="#v-${esc(S.cache.vlink.token)}">Vezi ce vede vizitatorul</a><button class="btn quiet sm" type="button" data-act="new-link">Generează alt link</button></div>
+    <p class="muted small">Dacă linkul ajunge la cine nu trebuie, generează altul. Cel vechi nu mai funcționează.</p></div>`;
+}
+
+/* pagina publică a vizitatorului (#v-<token>) – nu cere login */
+async function pagePublic(token) {
+  const wrap = inner => `<div class="pub"><div class="wrap"><div class="row between">${brand(48)}</div>${inner}</div></div>`;
+  if (S.pubDone) {
+    const r = S.pubDone;
+    return wrap(`<div class="card stack"><span class="chip ok" style="align-self:flex-start">Rezervare confirmată</span><h2>Ai loc în parcarea de vizitatori</h2>
+      <p>${fmtDT(r.starts_at)} → ${fmtDT(r.ends_at)}</p><div>${plateHTML(r.plate)}</div>
+      <div class="note">${ic('gate')}<span>Bariera îți recunoaște numărul cu o oră înainte de sosire. Poți parca pe orice loc liber marcat pentru vizitatori (locul ${esc(r.spot)} de pe hartă e orientativ). Când ieși, numărul se scoate din barieră. Se taxează orele reale petrecute în parcare, la apartamentul care te-a invitat.</span></div>
+      <p class="muted small">Locurile de vizitatori sunt între blocurile A1a și A1b, intrarea din aleea principală.</p><div class="mapscroll">${mapSVG({ sel: r.spot, interactive: false })}</div>
+      <button class="btn ghost" type="button" data-act="pub-again">Fă altă rezervare</button></div>`);
+  }
+  const { data: info } = await sb.rpc('visitor_link_info', { p_token: token });
+  if (!info) return wrap(`<div class="card stack"><h2>Linkul nu mai este valabil</h2><p class="muted">Cere un link nou de la persoana la care vii în vizită.</p></div>`);
+  const d = roundUp30(new Date(Date.now() + 15 * 60000)), e = new Date(d.getTime() + 3 * 3600000), max = new Date(Date.now() + 30 * 86400000);
+  return wrap(`<form class="card stack" id="pub-form"><h2>Rezervă un loc pentru vizitatori</h2><p class="muted">Vii în vizită la <b>${esc(info.unit)}</b>. Completează datele și primești un loc.</p>
+    <div class="form-grid">
+      <label class="f">Numele tău<input id="pb-name" required maxlength="80" autocomplete="name"></label>
+      <label class="f">Telefon<input id="pb-phone" type="tel" required maxlength="30" autocomplete="tel"></label>
+      <label class="f full">Numărul mașinii<input id="pb-plate" required placeholder="B 123 ABC" autocomplete="off"></label>
+      <label class="f">Ziua sosirii<input id="pb-date" type="date" value="${dateInput(d)}" min="${dateInput(new Date())}" max="${dateInput(max)}" required></label>
+      <label class="f">Ora sosirii<input id="pb-from" type="time" step="1800" value="${hhmm(d)}" required></label>
+      <label class="f">Ziua plecării<input id="pb-end" type="date" value="${dateInput(e)}" min="${dateInput(new Date())}" max="${dateInput(max)}" required></label>
+      <label class="f">Ora plecării<input id="pb-to" type="time" step="1800" value="${hhmm(e)}" required></label>
+      <p class="muted small full">Stai mai multe zile? Alege altă zi a plecării (maximum 7 zile). Cost: ${(TARIF?.lei_pe_ora ?? 5)} lei/oră ${TVA_TXT}, maximum ${(TARIF?.lei_pe_ora ?? 5) * (TARIF?.ore_plafon ?? 10)} lei la 24 de ore, plătit de apartamentul care te-a invitat.</p>
+    </div><p class="err" id="pb-err"></p>
+    <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se rezervă…' : 'Rezervă'}</button>
+    <p class="muted small">Datele tale sunt folosite doar pentru accesul în parcare.</p></form>`);
+}
+async function onPubSubmit(e) {
+  e.preventDefault();
+  const v = id => document.getElementById(id).value.trim(), err = document.getElementById('pb-err'); err.textContent = '';
+  const s = new Date(`${v('pb-date')}T${v('pb-from')}`), en = new Date(`${v('pb-end') || v('pb-date')}T${v('pb-to')}`), plate = plateNorm(v('pb-plate'));
+  if (plate.length < 4) { err.textContent = 'Scrie numărul mașinii, de exemplu B 123 ABC.'; return; }
+  if (!(s < en)) { err.textContent = 'Plecarea trebuie să fie după sosire.'; return; }
+  if (en - s > 7 * 86400000) { err.textContent = 'Poți rezerva maximum 7 zile.'; return; }
+  S.busy = true;
+  const { data, error } = await sb.rpc('visitor_book', { p_token: S.param, p_plate: plate, p_name: v('pb-name'), p_phone: v('pb-phone'), p_starts: s.toISOString(), p_ends: en.toISOString() });
+  S.busy = false;
+  if (error) { err.textContent = errMsg(error); return; }
+  S.pubDone = data; render(); window.scrollTo(0, 0);
 }
 
 /* fereastra de rezervare */
@@ -308,7 +377,7 @@ function nextFree(spot, start, durMs) {
   for (let i = 0; i < 60; i++) {
     const e = new Date(s.getTime() + durMs), c = (S.cache.occ || []).filter(o => o.spot_code === spot && clashes(o, s, e));
     if (!c.length) return s;
-    s = roundUp30(new Date(Math.max(...c.map(o => new Date(o.ends_at).getTime())) + 2 * GAP_MS));
+    s = roundUp30(new Date(Math.max(...c.map(o => new Date(o.ends_at).getTime()))));
   }
   return s;
 }
@@ -329,7 +398,7 @@ function pkStatusHTML() {
   const c = (S.cache.occ || []).filter(o => o.spot_code === p.spot && clashes(o, s, e));
   if (!c.length) return `<div class="note" style="background:var(--ok-soft)"><span><b style="color:var(--ok)">Locul ${p.spot} e liber</b> în intervalul ales. Cost estimat: <b>${lei(costParcare((e - s) / 3600000))}</b> ${TVA_TXT}.</span></div>`;
   const nk = nextFree(p.spot, s, e - s);
-  return `<div class="note" style="background:var(--bad-soft)"><span><b style="color:var(--bad)">Locul ${p.spot} e ocupat</b> ${c.map(o => `${fmtDT(o.starts_at)}–${hhmm(o.ends_at)}`).join(', ')}. Între două rezervări rămâne o pauză de 1 oră. Primul interval liber începe ${fmtDT(nk)}. <button type="button" class="btn ghost sm" data-act="pk-next" data-k="${nk.toISOString()}">Mută rezervarea acolo</button></span></div>`;
+  return `<div class="note" style="background:var(--bad-soft)"><span><b style="color:var(--bad)">Locul ${p.spot} e ocupat</b> ${c.map(o => `${fmtDT(o.starts_at)}–${hhmm(o.ends_at)}`).join(', ')}. Primul interval liber începe ${fmtDT(nk)}. <button type="button" class="btn ghost sm" data-act="pk-next" data-k="${nk.toISOString()}">Mută rezervarea acolo</button></span></div>`;
 }
 async function pkModalHTML() {
   await tarif();
@@ -395,39 +464,50 @@ async function pageHistory() {
   if (!codes.length) return '<div class="head"><h1>Rezervările mele</h1></div><p class="muted">Nu ai nicio unitate legată.</p>';
   const { data, error } = await sb.from('reservations').select('*').in('unit_code', codes).eq('status', 'activa').order('starts_at', { ascending: false }).limit(300);
   if (error) throw error;
-  const now = new Date(), H = r => (new Date(r.ends_at) - new Date(r.starts_at)) / 3600000;
+  const now = new Date(), H = r => resHours(r, now).h;
   const cost = r => costParcare(H(r), t);
+  const gate = r => { const x = resHours(r, now);
+    if (r.metrici_state === 'nu_e_cazul' && !r.entered_at) return '';
+    if (x.noShow) return ' · <b>nu a venit</b> (0 lei)';
+    if (r.entered_at && !r.exited_at) return ` · <b style="color:var(--ok)">în parcare acum</b> (intrat ${hhmm(r.entered_at)})`;
+    if (r.entered_at) return ` · intrat ${hhmm(r.entered_at)}, ieșit ${dateInput(new Date(r.entered_at)) === dateInput(new Date(r.exited_at)) ? hhmm(r.exited_at) : fmtDT(r.exited_at)}`;
+    if (r.metrici_state === 'trimis') return ' · numărul e în barieră';
+    if (r.metrici_state === 'de_trimis') return ' · se trimite la barieră…';
+    if (r.metrici_state === 'eroare') return ' · <span class="err">nu a ajuns la barieră, reîncercăm</span>';
+    return ''; };
   const up = data.filter(r => new Date(r.ends_at) > now).reverse(), past = data.filter(r => new Date(r.ends_at) <= now);
-  const row = (r, canCancel) => `<div class="item"><span class="grow stack" style="gap:2px"><span>${fmtDT(r.starts_at)} → ${dateInput(new Date(r.starts_at)) === dateInput(new Date(r.ends_at)) ? hhmm(r.ends_at) : fmtDT(r.ends_at)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · rezervat prin link' : ''} · ${esc(r.unit_code)}</span></span>${plateHTML(r.plate)}
-    <span class="hcost"><span class="small muted">${canCancel ? 'rezervat ' : ''}${hTxt(H(r))}</span><b>${canCancel ? '≈ ' : ''}${lei(cost(r))}</b></span>
+  const row = (r, canCancel) => `<div class="item"><span class="grow stack" style="gap:2px"><span>${fmtDT(r.starts_at)} → ${dateInput(new Date(r.starts_at)) === dateInput(new Date(r.ends_at)) ? hhmm(r.ends_at) : fmtDT(r.ends_at)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · rezervat prin link' : ''} · ${esc(r.unit_code)}${gate(r)}</span></span>${plateHTML(r.plate)}
+    <span class="hcost"><span class="small muted">${resHours(r, now).real ? 'la barieră ' : 'rezervat '}${hTxt(H(r))}</span><b>${resHours(r, now).real && !(r.entered_at && !r.exited_at) ? '' : '≈ '}${lei(cost(r))}</b></span>
     ${canCancel ? `<button class="btn quiet sm" data-act="res-cancel" data-id="${r.id}">Anulează</button>` : ''}</div>`;
   const tot = (l, label, est) => { const h = l.reduce((a, r) => a + H(r), 0), c = l.reduce((a, r) => a + cost(r), 0); return `<div class="tot"><span><b>${label}</b> <span class="muted small">· ${l.length} ${l.length === 1 ? 'rezervare' : 'rezervări'}</span></span><span class="row" style="gap:16px"><span>${hTxt(h)}</span><b style="font-size:20px">${est ? '≈ ' : ''}${lei(c)}</b></span></div>`; };
   const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
   const byMonth = {}; past.forEach(r => { const d = new Date(r.starts_at), k = `${LUNI[d.getMonth()]} ${d.getFullYear()}`; (byMonth[k] ||= []).push(r); });
-  return `<div class="head"><div class="stack" style="gap:4px"><h1>Rezervările mele</h1><p class="muted">Rezervările viitoare și cele trecute, cu orele și costul (${t.lei_pe_ora ?? 5} lei/oră ${TVA_TXT}, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei pentru fiecare 24 de ore). Deocamdată se afișează orele rezervate; orele reale de la barieră se adaugă după legătura cu Metrici. Suma apare pe întreținere.</p></div><a class="btn" href="#parcare">${ic('plus')} Rezervare nouă</a></div>
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Rezervările mele</h1><p class="muted">Rezervările viitoare și cele trecute, cu orele și costul (${t.lei_pe_ora ?? 5} lei/oră ${TVA_TXT}, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei pentru fiecare 24 de ore). Se taxează orele reale de la barieră, de la intrare până la ieșire; până intră mașina se arată orele rezervate. Dacă vizitatorul nu vine, nu se plătește nimic. Suma apare pe întreținere.</p></div><a class="btn" href="#parcare">${ic('plus')} Rezervare nouă</a></div>
   <div class="card stack"><h3>Urmează (${up.length})</h3><div class="list">${up.map(r => row(r, true)).join('') || '<p class="muted">Nicio rezervare viitoare.</p>'}</div>${up.length ? tot(up, 'Total estimat', true) : ''}</div>
   <div class="card stack"><h3>Trecute (${past.length})</h3>${Object.keys(byMonth).length ? Object.entries(byMonth).map(([m, l]) => `<h4 class="muted" style="margin:6px 0 0;text-transform:capitalize">${m}</h4><div class="list">${l.map(r => row(r, false)).join('')}</div>${tot(l, 'Total ' + m, false)}`).join('') : '<p class="muted">Încă nimic.</p>'}</div>`;
 }
 
 /* vehiculele mele */
 async function pageVehicles() {
-  const [{ data: veh, error }, { data: acc }] = await Promise.all([
+  const unit = S.units[0]?.code;
+  const [{ data: veh, error }, { data: pk }] = await Promise.all([
     sb.from('vehicles').select('*, parking_accounts(metrici_name, spaces, location)').eq('person_id', S.me.id).order('plate'),
-    sb.from('parking_accounts').select('*').eq('person_id', S.me.id)
+    unit ? sb.rpc('my_unit_parking', { p_unit: unit }) : Promise.resolve({ data: null })
   ]);
   if (error) throw error;
-  const accounts = acc || [], spaces = accounts.reduce((a, x) => a + (x.spaces || 0), 0), inside = (veh || []).filter(v => v.inside).length;
-  const st = v => !v.active ? ['Inactiv', 'line'] : v.expires_at && new Date(v.expires_at) < new Date() ? ['Expirat', 'bad'] : ['Activ', 'ok'];
+  const spaces = pk?.spaces || 0, inside = pk?.inside ?? (veh || []).filter(v => v.inside).length, accounts = spaces ? [1] : [];
+  const MS = { de_adaugat: ['Se trimite la barieră…', 'line'], activ: ['În barieră', 'ok'], suspendat: ['Oprit temporar: locurile sunt ocupate', 'warn'], fara_parcare: ['Fără loc de parcare', 'line'], eroare: ['Nu a ajuns la barieră, reîncercăm', 'bad'] };
+  const st = v => !v.active ? ['Inactiv', 'line'] : v.expires_at && new Date(v.expires_at) < new Date() ? ['Expirat', 'bad'] : v.source === 'app' ? (MS[v.metrici_state] || MS.de_adaugat) : ['Activ', 'ok'];
   const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
     <td style="white-space:nowrap">${v.expires_at ? fmtDate(v.expires_at) : '<span class="muted">Nu expiră</span>'}</td><td><span class="chip ${s[1]}">${s[0]}</span></td>
     <td>${v.inside ? '<span class="chip ok"><span class="dot"></span>Da</span>' : '<span class="muted">Nu</span>'}</td>
     <td>${v.inside ? '<span class="small muted">nu se poate șterge cât e în complex</span>' : v.source === 'app' ? `<button class="btn quiet sm" data-act="veh-del" data-id="${v.id}" aria-label="Șterge ${esc(v.plate)}">${ic('x')}</button>` : '<span class="small muted">din Metrici</span>'}</td></tr>`; }).join('');
   return `<div class="head"><div class="stack" style="gap:4px"><h1>Vehiculele mele</h1><p class="muted">Mașinile tale din lista barierei.</p></div></div>
-  ${accounts.length ? `<div class="note" style="background:var(--accent-soft)">${ic('parking')}<span><b style="color:var(--accent)">${inside} din ${spaces} ${spaces === 1 ? 'loc ocupat' : 'locuri ocupate'}.</b> Pot sta în complex în același timp maximum ${spaces} ${spaces === 1 ? 'mașină' : 'mașini'}; poți avea mai multe înregistrate. Starea „În complex” e cea de la importul din Metrici și se va actualiza automat după legătura cu bariera.</span></div>` : '<div class="note"><span>Nu ai încă un cont de parcare legat. Dacă ai loc de parcare, scrie administrației.</span></div>'}
+  ${accounts.length ? `<div class="note" style="background:var(--accent-soft)">${ic('parking')}<span><b style="color:var(--accent)">${inside} din ${spaces} ${spaces === 1 ? 'loc ocupat' : 'locuri ocupate'}.</b> Pot sta în complex în același timp maximum ${spaces} ${spaces === 1 ? 'mașină' : 'mașini'}; poți avea mai multe înregistrate. Când toate locurile sunt ocupate, celelalte mașini adăugate din aplicație sunt oprite temporar la barieră și pornesc singure când iese o mașină. „În complex” se actualizează automat de la barieră.</span></div>` : '<div class="note"><span>Unitatea ta nu are încă un loc de parcare în evidență. Dacă ai loc de parcare, scrie administrației.</span></div>'}
   <div class="card tablewrap"><table class="rep veh"><thead><tr><th>Număr</th><th>Cont / parcare</th><th>Expirare</th><th>Stare</th><th>În complex</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">Nicio mașină înregistrată.</td></tr>'}</tbody></table></div>
   <form id="veh-form" class="card stack"><h3>Adaugă o mașină</h3>
     <div class="form-grid"><label class="f">Număr de înmatriculare<input id="vh-plate" required placeholder="B 123 ABC" autocomplete="off"></label><span></span></div>
-    <div class="row"><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button><span class="muted small">Numărul va ajunge automat în lista barierei după legătura cu Metrici (în lucru).</span></div>
+    <div class="row"><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button><span class="muted small">Numărul ajunge automat în barieră în câteva secunde.</span></div>
     <p class="err" id="vh-err"></p></form>`;
 }
 async function onVehAdd(e) {
@@ -622,6 +702,7 @@ async function pageUsers() {
 let renderSeq = 0;
 async function render() {
   const seq = ++renderSeq;
+  if (S.route.startsWith('v-')) { S.param = S.route.slice(2); await tarif().catch(() => {}); const h = await pagePublic(S.param); if (seq !== renderSeq) return; root.innerHTML = h; bind(); return; }
   if (!S.session) { root.innerHTML = loginView(); bind(); return; }
   if (needsPassword()) { root.innerHTML = setPasswordView(); bind(); return; }
   if (!S.me) {
@@ -645,6 +726,8 @@ function bind() {
   on('login-form', 'submit', onLoginSubmit);
   on('pw-form', 'submit', onSetPassword);
   on('veh-form', 'submit', onVehAdd);
+  on('pub-form', 'submit', onPubSubmit);
+  on('vl-unit', 'change', e => { S.cache.linkUnit = e.target.value; render(); });
   on('reply-form', 'submit', onReply);
   on('nt-form', 'submit', onNewTicket);
   on('an-form', 'submit', onAnn);
@@ -683,6 +766,9 @@ document.addEventListener('click', async e => {
     document.body.appendChild(sh);
     setTimeout(() => document.addEventListener('click', function off(ev) { if (!sh.contains(ev.target) || ev.target.closest('a')) { sh.remove(); document.removeEventListener('click', off); } }), 0);
   }
+  if (a === 'copy') { try { await navigator.clipboard.writeText(b.dataset.t); toast('Link copiat. Trimite-l vizitatorului.'); } catch { prompt('Copiază linkul:', b.dataset.t); } return; }
+  if (a === 'new-link') { if (!confirm('Generezi alt link? Cel vechi nu va mai funcționa.')) return; const { data, error } = await sb.rpc('my_visitor_link', { p_unit: S.cache.vlink?.unit || S.units[0]?.code, p_new: true }); if (error) return toast(errMsg(error)); S.cache.vlink = { unit: S.cache.vlink?.unit || S.units[0]?.code, token: data }; toast('Link nou generat.'); render(); return; }
+  if (a === 'pub-again') { S.pubDone = null; render(); return; }
   if (a === 'pick-spot') { openPk(b.dataset.s); return; }
   if (a === 'pk-close') { S.pk = null; document.getElementById('pk-wrap')?.remove(); return; }
   if (a === 'pk-mode') { readPk(); S.pk.mode = b.dataset.m; if (S.pk.mode === 'zile' && S.pk.endDate === S.pk.date) { const d = new Date(S.pk.date + 'T00:00'); d.setDate(d.getDate() + 1); S.pk.endDate = dateInput(d); } showPk(); return; }
