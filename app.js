@@ -236,12 +236,12 @@ const dateInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getD
 const lei = n => `${(Math.round(n * 100) / 100).toFixed(2).replace('.', ',')} lei`;
 const hTxt = h => { const x = Math.round(h * 100) / 100; return `${String(x).replace('.', ',')} ${x === 1 ? 'oră' : 'ore'}`; };
 let TARIF = null;
-/* Tarif vizitatori: lei_pe_ora (fără TVA); în fiecare perioadă de 24 h de la sosire se taxează fiecare oră începută, maximum ore_plafon ore (5 lei × 10 h = 50 lei / 24 h). */
+/* Tarif vizitatori: lei_pe_ora (nu se aplică TVA); în fiecare perioadă de 24 h de la sosire se taxează fiecare oră începută, maximum ore_plafon ore (5 lei × 10 h = 50 lei / 24 h). */
 function costParcare(h, t = TARIF || {}) {
   const rate = t.lei_pe_ora ?? 5, cap = t.ore_plafon ?? 10, zile = Math.floor(h / 24 + 1e-9), rest = Math.max(0, Math.ceil(h - zile * 24 - 1e-9));
   return (zile * Math.min(24, cap) + Math.min(rest, cap)) * rate;
 }
-const TVA_TXT = 'fără TVA';
+const TVA_TXT = 'nu se aplică TVA';
 async function tarif() { if (TARIF) return TARIF; const { data } = await sb.from('settings').select('value').eq('key', 'tarif').maybeSingle(); TARIF = data?.value || { lei_pe_ora: 5 }; return TARIF; }
 const clashes = (o, s, e) => new Date(o.starts_at).getTime() < e.getTime() && s.getTime() < new Date(o.ends_at).getTime();
 // ore taxate: din momentul intrării la barieră până la ieșire (sau acum, dacă e încă în parcare); fără intrare → orele rezervate (estimare) sau 0 dacă n-a venit
@@ -1137,7 +1137,7 @@ async function pageReport() {
   return `<div class="head"><div class="stack" style="gap:4px"><h1>Raport parcări vizitatori</h1><p class="muted">Cât au stat vizitatorii fiecărui apartament în parcare, pentru lista de întreținere. Orele vin de la barieră (Metrici).</p></div><div class="row"><button class="btn" data-act="xlsx-report">${ic('doc')} Descarcă Excel</button></div></div>
   <div class="card stack"><div class="form-grid fg4">
    <label class="f">Luna<input type="month" id="rep-month" value="${m}"></label>
-   <label class="f">Tarif (lei / oră, fără TVA)<input type="number" id="rep-rate" min="0" step="0.5" value="${t.lei_pe_ora ?? 5}"></label>
+   <label class="f">Tarif (lei / oră, nu se aplică TVA)<input type="number" id="rep-rate" min="0" step="0.5" value="${t.lei_pe_ora ?? 5}"></label>
    <label class="f">Ore taxate maxim la 24 h<input type="number" id="rep-cap" min="1" max="24" step="1" value="${t.ore_plafon ?? 10}"></label>
    <div class="f"><span>&nbsp;</span><button class="btn quiet" data-act="tarif-save">Salvează tariful</button></div></div>
    <p class="muted small">Regula: fiecare oră începută, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei pentru fiecare 24 de ore; după 24 h taxarea reîncepe. Vizitatorul care nu a venit: 0 lei.</p></div>
@@ -1180,7 +1180,7 @@ async function downloadReportXLSX() {
   const det = [['Unitate', 'Loc', 'Nr. înmatriculare', 'Vizitator', 'Telefon', 'Sursă', 'Început rezervare', 'Sfârșit rezervare', 'Ore rezervate', 'Intrare (barieră)', 'Ieșire (barieră)', 'Ore în parcare', 'Depășire (min)', 'Total (lei)']];
   list.forEach(r => { const x = resHours(r); det.push([r.unit_code, r.spot_code, r.plate, r.guest_name || '', r.guest_phone || '', SRC[r.source] || r.source, d(r.starts_at), d(r.ends_at), Math.round((new Date(r.ends_at) - new Date(r.starts_at)) / 36e3) / 100, d(r.entered_at), d(r.exited_at), x.real ? Math.round(x.h * 100) / 100 : '', overMin(r) || '', resCost(r)]); });
   const wsD = X.utils.aoa_to_sheet(det, { cellDates: true }); wsD['!cols'] = [12, 6, 14, 22, 14, 18, 17, 17, 10, 17, 17, 10, 10, 10].map(w => ({ wch: w }));
-  const rows = reportRows(list), cen = [[`Parcare vizitatori – ${LUNI[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`], ['Unitate', 'Nr. vizite', 'Ore în parcare', `Total (lei, ${t.lei_pe_ora ?? 5} lei/oră fără TVA)`], ...rows.map(r => [r.unit, r.visits, Math.round(r.real * 100) / 100, Math.round(r.sum * 100) / 100]), ['TOTAL', rows.reduce((a, r) => a + r.visits, 0), Math.round(rows.reduce((a, r) => a + r.real, 0) * 100) / 100, Math.round(rows.reduce((a, r) => a + r.sum, 0) * 100) / 100], [], [`Regula: ${t.lei_pe_ora ?? 5} lei pentru fiecare oră începută, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei la fiecare 24 de ore. Orele sunt intrarea și ieșirea reală de la barieră.`]];
+  const rows = reportRows(list), cen = [[`Parcare vizitatori – ${LUNI[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`], ['Unitate', 'Nr. vizite', 'Ore în parcare', `Total (lei, ${t.lei_pe_ora ?? 5} lei/oră, nu se aplică TVA)`], ...rows.map(r => [r.unit, r.visits, Math.round(r.real * 100) / 100, Math.round(r.sum * 100) / 100]), ['TOTAL', rows.reduce((a, r) => a + r.visits, 0), Math.round(rows.reduce((a, r) => a + r.real, 0) * 100) / 100, Math.round(rows.reduce((a, r) => a + r.sum, 0) * 100) / 100], [], [`Regula: ${t.lei_pe_ora ?? 5} lei pentru fiecare oră începută, maximum ${(t.lei_pe_ora ?? 5) * (t.ore_plafon ?? 10)} lei la fiecare 24 de ore. Orele sunt intrarea și ieșirea reală de la barieră.`]];
   const wsC = X.utils.aoa_to_sheet(cen); wsC['!cols'] = [{ wch: 24 }, { wch: 12 }, { wch: 16 }, { wch: 34 }];
   const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, wsC, 'Centralizator'); X.utils.book_append_sheet(wb, wsD, 'Detaliu');
   X.writeFile(wb, `${m.slice(5, 7)}.${m.slice(0, 4)}_Avalon_Parcare_vizitatori.xlsx`); toast('Excel salvat.');
