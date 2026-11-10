@@ -229,6 +229,8 @@ const SPOTS_N = 15, LEFT_N = 7, ALL_SPOTS = Array.from({ length: SPOTS_N }, (_, 
 const GAP_MS = 0; // fără pauză între rezervări: orele se taxează după intrarea/ieșirea reală la barieră
 const ORIENT = 'Locul ales e orientativ: după rezervare, vizitatorul poate parca pe orice loc liber marcat pentru vizitatori.';
 const hhmm = d => fmtTime(d);
+const nowMin = () => { const x = new Date(); x.setSeconds(0, 0); return x; };
+const inPast = s => s < new Date(Date.now() - 5 * 60000);
 const roundUp30 = d => { const x = new Date(d); x.setSeconds(0, 0); const m = x.getMinutes(); if (m === 0) return x; x.setMinutes(m <= 30 ? 30 : 60); return x; };
 const dateInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const lei = n => `${(Math.round(n * 100) / 100).toFixed(2).replace('.', ',')} lei`;
@@ -341,16 +343,16 @@ async function pagePublic(token) {
   }
   const { data: info } = await sb.rpc('visitor_link_info', { p_token: token });
   if (!info) return wrap(`<div class="card stack"><h2>Linkul nu mai este valabil</h2><p class="muted">Cere un link nou de la persoana la care vii în vizită.</p></div>`);
-  const d = roundUp30(new Date(Date.now() + 15 * 60000)), e = new Date(d.getTime() + 3 * 3600000), max = new Date(Date.now() + 30 * 86400000);
+  const d = nowMin(), e = new Date(d.getTime() + 3 * 3600000), max = new Date(Date.now() + 30 * 86400000);
   return wrap(`<form class="card stack" id="pub-form"><h2>Rezervă un loc pentru vizitatori</h2><p class="muted">Vii în vizită la <b>${esc(info.unit)}</b>. Completează datele și primești un loc.</p>
     <div class="form-grid">
       <label class="f">Numele tău<input id="pb-name" required maxlength="80" autocomplete="name"></label>
       <label class="f">Telefon<input id="pb-phone" type="tel" required maxlength="30" autocomplete="tel"></label>
       <label class="f full">Numărul mașinii<input id="pb-plate" required placeholder="B 123 ABC" autocomplete="off"></label>
       <label class="f">Ziua sosirii<input id="pb-date" type="date" value="${dateInput(d)}" min="${dateInput(new Date())}" max="${dateInput(max)}" required></label>
-      <label class="f">Ora sosirii<input id="pb-from" type="time" step="1800" value="${hhmm(d)}" required></label>
+      <label class="f">Ora sosirii<input id="pb-from" type="time" step="60" value="${hhmm(d)}" required></label>
       <label class="f">Ziua plecării<input id="pb-end" type="date" value="${dateInput(e)}" min="${dateInput(new Date())}" max="${dateInput(max)}" required></label>
-      <label class="f">Ora plecării<input id="pb-to" type="time" step="1800" value="${hhmm(e)}" required></label>
+      <label class="f">Ora plecării<input id="pb-to" type="time" step="60" value="${hhmm(e)}" required></label>
       <p class="muted small full">Stai mai multe zile? Alege altă zi a plecării (maximum 7 zile). Cost: ${(TARIF?.lei_pe_ora ?? 5)} lei/oră ${TVA_TXT}, maximum ${(TARIF?.lei_pe_ora ?? 5) * (TARIF?.ore_plafon ?? 10)} lei la 24 de ore, plătit de apartamentul care te-a invitat.</p>
     </div><p class="err" id="pb-err"></p>
     <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se rezervă…' : 'Rezervă'}</button>
@@ -361,6 +363,7 @@ async function onPubSubmit(e) {
   const v = id => document.getElementById(id).value.trim(), err = document.getElementById('pb-err'); err.textContent = '';
   const s = new Date(`${v('pb-date')}T${v('pb-from')}`), en = new Date(`${v('pb-end') || v('pb-date')}T${v('pb-to')}`), plate = plateNorm(v('pb-plate'));
   if (plate.length < 4) { err.textContent = 'Scrie numărul mașinii, de exemplu B 123 ABC.'; return; }
+  if (inPast(s)) { err.textContent = 'Ora sosirii a trecut. Alege ora de acum sau mai târziu.'; return; }
   if (!(s < en)) { err.textContent = 'Plecarea trebuie să fie după sosire.'; return; }
   if (en - s > 7 * 86400000) { err.textContent = 'Poți rezerva maximum 7 zile.'; return; }
   S.busy = true;
@@ -381,7 +384,7 @@ function nextFree(spot, start, durMs) {
   return s;
 }
 function openPk(spot) {
-  const s = nextFree(spot, roundUp30(new Date()), 3 * 3600000), e = new Date(s.getTime() + 3 * 3600000);
+  const s = nextFree(spot, nowMin(), 3 * 3600000), e = new Date(s.getTime() + 3 * 3600000);
   S.pk = { spot, mode: 'ore', date: dateInput(s), from: hhmm(s), endDate: dateInput(e), to: dateInput(e) === dateInput(s) ? hhmm(e) : '23:30', plate: '', guest: '', unit: S.units[0]?.code };
   showPk();
 }
@@ -394,6 +397,7 @@ function pkStatusHTML() {
   if (!(p.from && p.to) || !(s < e)) return '<p class="err">Plecarea trebuie să fie după sosire.</p>';
   if (e - s > 7 * 86400000) return '<p class="err">Poți rezerva maximum 7 zile.</p>';
   if (e <= new Date()) return '<p class="err">Intervalul ales e deja în trecut.</p>';
+  if (inPast(s)) return '<p class="err">Ora sosirii a trecut. Alege ora de acum sau mai târziu.</p>';
   const c = (S.cache.occ || []).filter(o => o.spot_code === p.spot && clashes(o, s, e));
   if (!c.length) return `<div class="note" style="background:var(--ok-soft)"><span><b style="color:var(--ok)">Locul ${p.spot} e liber</b> în intervalul ales. Cost estimat: <b>${lei(costParcare((e - s) / 3600000))}</b> ${TVA_TXT}.</span></div>`;
   const nk = nextFree(p.spot, s, e - s);
@@ -415,9 +419,9 @@ async function pkModalHTML() {
   <p class="small muted">${ORIENT}</p>
   ${S.units.length > 1 ? `<label class="f">Pentru apartamentul<select id="pm-unit">${S.units.map(u => `<option ${u.code === p.unit ? 'selected' : ''}>${esc(u.code)}</option>`).join('')}</select></label>` : ''}
   <div class="row" style="gap:12px"><span class="muted small">Cât timp?</span><div class="seg" style="min-width:240px">${[['ore', 'Câteva ore'], ['zile', 'Mai multe zile']].map(([k, l]) => `<button type="button" data-act="pk-mode" data-m="${k}" aria-pressed="${p.mode === k}">${l}</button>`).join('')}</div></div>
-  ${p.mode === 'zile' ? `<div class="form-grid"><label class="f">Ziua sosirii<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">Ora sosirii<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="1800"></label>
-   <label class="f">Ziua plecării<input type="date" id="pm-end" class="pm-f" value="${p.endDate}" min="${p.date}"></label><label class="f">Ora plecării<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="1800"></label></div>`
-    : `<div class="form-grid fg3"><label class="f">Ziua<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">De la<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="1800"></label><label class="f">Până la<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="1800"></label></div>
+  ${p.mode === 'zile' ? `<div class="form-grid"><label class="f">Ziua sosirii<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">Ora sosirii<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="60"></label>
+   <label class="f">Ziua plecării<input type="date" id="pm-end" class="pm-f" value="${p.endDate}" min="${p.date}"></label><label class="f">Ora plecării<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="60"></label></div>`
+    : `<div class="form-grid fg3"><label class="f">Ziua<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">De la<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="60"></label><label class="f">Până la<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="60"></label></div>
    <div class="row" style="gap:6px">${[1, 2, 3, 4, 6].map(h => `<button type="button" class="chip pick" data-act="pk-dur" data-h="${h}">${h} ${h === 1 ? 'oră' : 'ore'}</button>`).join('')}</div>`}
   <div id="pk-status">${pkStatusHTML()}</div>
   <div class="stack" style="gap:6px"><span class="muted small">Numărul mașinii</span>
@@ -443,6 +447,7 @@ async function onPkSubmit(e) {
   e.preventDefault(); readPk();
   const p = S.pk, err = document.getElementById('pm-err'), { s, e: en } = pkRange(), plate = plateNorm(p.plate);
   err.textContent = '';
+  if (inPast(s)) { err.textContent = 'Ora sosirii a trecut. Alege ora de acum sau mai târziu.'; return; }
   if (!(s < en)) { err.textContent = 'Plecarea trebuie să fie după sosire.'; return; }
   if (plate.length < 4) { err.textContent = 'Alege sau scrie numărul mașinii.'; return; }
   // locul ales e orientativ: dacă e ocupat, luăm automat alt loc liber în același interval
