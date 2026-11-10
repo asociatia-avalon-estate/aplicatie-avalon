@@ -56,7 +56,8 @@ const ICON = {
   x: 'M18 6 6 18M6 6l12 12',
   out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
-  menu: 'M4 6h16M4 12h16M4 18h16'
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  car: 'M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 13h18M7 16h.01M17 16h.01'
 };
 const ic = (n, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[n]}"/></svg>`;
 const LEAF = ['#73a12f', '#1e6b38', '#f2b21a', '#e3651d', '#d23b2b', '#4e8b6c'];
@@ -71,8 +72,8 @@ const REL = { proprietar: 'Proprietar', chirias: 'Chiriaș', membru_familie: 'Me
 
 /* ---------- navigare ---------- */
 function menu() {
-  const m = [['acasa', 'Acasă', 'home'], ['parcare', 'Parcare vizitatori', 'parking'], ['tichete', 'Tichete', 'ticket'], ['anunturi', 'Anunțuri', 'mega'], ['documente', 'Documente', 'doc'], ['contacte', 'Contacte', 'contacts']];
-  if (isGuard()) m.splice(2, 0, ['paza', 'Pază', 'gate']);
+  const m = [['acasa', 'Acasă', 'home'], ['parcare', 'Parcare vizitatori', 'parking'], ['istoric', 'Rezervările mele', 'doc'], ['vehicule', 'Vehiculele mele', 'car'], ['tichete', 'Tichete', 'ticket'], ['anunturi', 'Anunțuri', 'mega'], ['documente', 'Documente', 'doc'], ['contacte', 'Contacte', 'contacts']];
+  if (isGuard()) m.splice(4, 0, ['paza', 'Pază', 'gate']);
   if (isAdmin()) m.push(['utilizatori', 'Utilizatori', 'users']);
   m.push(['profil', 'Profilul meu', 'user']);
   return m;
@@ -222,62 +223,214 @@ async function pageHome() {
   </div>`;
 }
 
-/* parcare */
+/* parcare – hartă, rezervare în fereastră, istoric, vehicule
+   Locurile de pe hartă sunt ORIENTATIVE: după rezervare vizitatorul poate parca pe orice loc liber de vizitatori. */
+const SPOTS_N = 15, LEFT_N = 7, ALL_SPOTS = Array.from({ length: SPOTS_N }, (_, i) => 'V' + (i + 1));
+const GAP_MS = 30 * 60000; // 30 min înainte + 30 min după = pauză de 1 oră între rezervări pe același loc
+const ORIENT = 'Locul ales e orientativ: după rezervare, vizitatorul poate parca pe orice loc liber marcat pentru vizitatori.';
+const hhmm = d => fmtTime(d);
+const roundUp30 = d => { const x = new Date(d); x.setSeconds(0, 0); const m = x.getMinutes(); if (m === 0) return x; x.setMinutes(m <= 30 ? 30 : 60); return x; };
+const dateInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const lei = n => `${(Math.round(n * 100) / 100).toFixed(2).replace('.', ',')} lei`;
+const hTxt = h => { const x = Math.round(h * 100) / 100; return `${String(x).replace('.', ',')} ${x === 1 ? 'oră' : 'ore'}`; };
+let TARIF = null;
+async function tarif() { if (TARIF) return TARIF; const { data } = await sb.from('settings').select('value').eq('key', 'tarif').maybeSingle(); TARIF = data?.value || { lei_pe_ora: 5 }; return TARIF; }
+const clashes = (o, s, e) => new Date(o.starts_at).getTime() - GAP_MS < e.getTime() + GAP_MS && s.getTime() - GAP_MS < new Date(o.ends_at).getTime() + GAP_MS;
+
+function carSVG(x, y, w, h) {
+  const cw = Math.min(w * .62, 24), ch = Math.min(h * .84, 42), l = x + (w - cw) / 2, t = y + (h - ch) / 2, r = l + cw, b = t + ch, cx = x + w / 2, f = t + ch * .3, k = b - ch * .2;
+  return `<g class="car"><rect x="${l}" y="${t}" width="${cw}" height="${ch}" rx="${cw * .38}"/><path d="M${l + 2} ${f + 2} Q${cx} ${f - 5} ${r - 2} ${f + 2} M${l + 2.5} ${k} Q${cx} ${k + 4} ${r - 2.5} ${k} M${l + 2} ${f + 2} V${k} M${r - 2} ${f + 2} V${k} M${l} ${f} h-2.5 M${r} ${f} h2.5"/></g>`;
+}
+function mapSVG({ busy = new Set(), sel = null, interactive = true } = {}) {
+  const W = 360, AX = 298, AW = 58, CX = AX + AW / 2, x0 = 8, cw = AX - x0 - 8, H = 660, sw = 32, sg = 4, sh = 50, TOPY = 88;
+  let g = '';
+  const RX = 155, RY = 70, JY = 200;
+  g += `<rect x="0" y="0" width="${W}" height="22" class="m-street"/><text x="${x0}" y="16" class="m-cap">Stradă</text>`;
+  g += `<path class="m-roadline" style="stroke-width:${AW}px" d="M${RX} 0 V${RY} L${CX} ${JY} V${H}"/>`;
+  g += `<path class="m-lane" d="M${RX} 46 V${RY} L${CX} ${JY} V${H - 6}"/>`;
+  g += `<line x1="${RX - 27}" y1="32" x2="${RX + 27}" y2="32" class="m-bar"/><circle cx="${RX - 27}" cy="32" r="3" class="m-post"/><circle cx="${RX + 27}" cy="32" r="3" class="m-post"/><text x="${RX}" y="16" class="m-cap m-cap-on" text-anchor="middle">Acces complex</text>`;
+  g += `<path class="m-dir m-dir-sm" d="M${RX - 14} 46 V60 M${RX - 18} 56 L${RX - 14} 60 L${RX - 10} 56"/><path class="m-dir m-dir-sm" d="M${RX + 14} 60 V46 M${RX + 10} 50 L${RX + 14} 46 L${RX + 18} 50"/>`;
+  g += `<rect x="8" y="30" width="86" height="44" rx="8" class="m-gate"/><text x="51" y="59" class="m-bl" text-anchor="middle" style="font-size:20px">Pază</text>`;
+  g += `<rect x="200" y="4" width="${W - 204}" height="62" rx="8" class="m-gate"/><text x="${(200 + W - 4) / 2}" y="43" class="m-bl" text-anchor="middle">Gatehouse</text>`;
+  const arr = (x, y, dir) => `<path class="m-dir m-dir-sm" d="M${x} ${y - 7} V${y + 7} M${x - 4} ${dir > 0 ? y + 3 : y - 3} L${x} ${dir > 0 ? y + 7 : y - 7} L${x + 4} ${dir > 0 ? y + 3 : y - 3}"/>`;
+  [240, 330, 520, 625].forEach(y => { g += arr(AX + AW / 4, y, 1) + arr(AX + 3 * AW / 4, y, -1); });
+  g += `<text class="m-lbl" transform="translate(${AX + 10} 415) rotate(90)" text-anchor="middle">Aleea principală</text>`;
+  g += `<g transform="translate(0 ${TOPY - 40})">`;
+  const offRow = (y, n, pre, label) => { let r = `<text x="${x0}" y="${y - 6}" class="m-cap">${label}</text>`; for (let i = 0; i < n; i++) { const x = x0 + i * (sw + sg), lbl = `${pre}${i + 1}, nu se poate rezerva`; r += `<g class="sp off" role="img" aria-label="${lbl}"><title>${lbl}</title><rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="6"/><text x="${x + sw / 2}" y="${y + sh / 2}" dominant-baseline="central" text-anchor="middle" transform="rotate(90 ${x + sw / 2} ${y + sh / 2})">${pre}${i + 1}</text></g>`; } return r; };
+  g += offRow(94, 4, 'AD', 'Administrație · nu se rezervă');
+  g += `<g transform="translate(0 38)">`;
+  g += offRow(170, 6, 'PK', 'PK · nu se rezervă momentan');
+  g += `<rect x="${x0}" y="232" width="${cw}" height="72" rx="10" class="m-bld"/><text x="${x0 + cw / 2}" y="276" class="m-bl" text-anchor="middle">Bloc A1a</text>`;
+  g += `<text x="${x0}" y="326" class="m-cap m-cap-on">${interactive ? 'Vizitatori · atinge un loc ca să rezervi' : 'Vizitatori'}</text>`;
+  const ay = sh + 336, ah = 34;
+  g += `<rect x="${x0}" y="${ay}" width="${AX - x0}" height="${ah}" class="m-aisle"/><line x1="${x0 + 6}" y1="${ay + ah / 2}" x2="${AX - 6}" y2="${ay + ah / 2}" class="m-dash"/>`;
+  ALL_SPOTS.forEach((s, i) => {
+    const top = i < LEFT_N, col = top ? i : i - LEFT_N, x = x0 + col * (sw + sg), y = top ? ay - sh - 2 : ay + ah + 2;
+    const st = busy.has(s) ? 'busy' : sel === s ? 'sel' : 'free', lbl = `Locul ${s}, ${st === 'busy' ? 'ocupat acum' : st === 'sel' ? 'ales' : 'liber'}`;
+    const act = interactive ? `role="button" tabindex="0" data-act="pick-spot" data-s="${s}"` : 'role="img"';
+    g += `<g class="sp ${st}" ${act} aria-label="${lbl}"><title>${lbl}</title><rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="6"/>${st === 'busy' ? carSVG(x, y, sw, sh) : ''}<text x="${x + sw / 2}" y="${y + sh / 2}" dominant-baseline="central" text-anchor="middle" transform="rotate(90 ${x + sw / 2} ${y + sh / 2})">${s}</text></g>`;
+  });
+  const by = ay + ah + sh + 16;
+  g += `<rect x="${x0}" y="${by}" width="${cw}" height="72" rx="10" class="m-bld"/><text x="${x0 + cw / 2}" y="${by + 44}" class="m-bl" text-anchor="middle">Bloc A1b</text></g></g>`;
+  return `<svg class="map" viewBox="0 0 ${H} ${W}" role="group" aria-label="Harta parcării pentru vizitatori"><g transform="translate(0 ${W}) rotate(-90)">${g}</g></svg>`;
+}
+
 async function pageParking() {
-  const day = S.param ? new Date(S.param + 'T00:00') : dayStart(new Date());
-  const from = dayStart(day), to = new Date(from.getTime() + 86400000);
-  const [{ data: occ, error }, { data: spots }, { data: mine }] = await Promise.all([
-    sb.rpc('spot_occupancy', { p_from: from.toISOString(), p_to: to.toISOString() }),
-    sb.from('parking_spots').select('*').eq('active', true).order('sort'),
-    sb.from('reservations').select('*').eq('status', 'activa').gt('ends_at', new Date().toISOString()).order('starts_at')
+  const now = new Date(), from = new Date(now.getTime() - 86400000), to = new Date(now.getTime() + 31 * 86400000 - 86400000);
+  const { data: occ, error } = await sb.rpc('spot_occupancy', { p_from: from.toISOString(), p_to: to.toISOString() });
+  if (error) throw error;
+  S.cache.occ = occ || [];
+  const active = S.cache.occ.filter(o => new Date(o.starts_at) <= now && new Date(o.ends_at) > now);
+  const busy = new Set(active.map(o => o.spot_code)), free = SPOTS_N - busy.size;
+  const occList = ALL_SPOTS.map(sp => { const o = active.find(x => x.spot_code === sp); return o ? `<div class="item occ-now"><b style="font-family:var(--display);font-size:22px;width:42px">${sp}</b><span class="grow">Ocupat · până la ${hhmm(o.ends_at)}</span></div>` : `<div class="item"><b style="font-family:var(--display);font-size:22px;width:42px">${sp}</b><span class="grow" style="color:var(--ok)">Liber</span></div>`; }).join('');
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Parcare vizitatori</h1><p class="muted">15 locuri (V1–V15), între blocurile A1a și A1b. Atinge un loc pe hartă ca să rezervi. Și locurile ocupate acum se pot rezerva pentru mai târziu.</p></div><a class="btn quiet" href="#istoric">Rezervările mele</a></div>
+  <div class="note"><span><b>Locurile sunt orientative.</b> Rezervarea îți garantează un loc în parcarea de vizitatori, nu un loc anume: după rezervare, vizitatorul poate parca pe orice loc liber marcat pentru vizitatori.</span></div>
+  <div class="card stack">
+    <div class="mapwrap"><div class="mapscroll">${mapSVG({ busy, interactive: S.units.length > 0 })}</div>
+    <div class="mapinfo">
+      <div class="stat"><span class="muted small">Libere acum</span><span class="n">${free}<span class="muted" style="font-size:24px"> / ${SPOTS_N}</span></span></div>
+      <div class="legend" style="flex-direction:column;gap:6px"><span><i style="background:var(--paper);border:1.5px dashed var(--muted)"></i>liber acum</span><span><i style="background:var(--bad-soft)"></i>ocupat acum (se poate rezerva pentru mai târziu)</span><span><i style="background:var(--line)"></i>administrație și PK (nu se rezervă)</span></div>
+      <p class="muted small">Maximum 3 rezervări active pe apartament. Între două rezervări rămâne 1 oră liberă, ca vizitatorul următor să găsească loc.</p>
+      ${S.units.length ? '' : '<p class="err">Nu ai nicio unitate legată de cont, deci nu poți rezerva încă.</p>'}
+    </div></div>
+  </div>
+  <div class="card stack"><h3>Ocupare acum</h3><div class="occgrid">${occList}</div></div>`;
+}
+
+/* fereastra de rezervare */
+function nextFree(spot, start, durMs) {
+  let s = new Date(start);
+  for (let i = 0; i < 60; i++) {
+    const e = new Date(s.getTime() + durMs), c = (S.cache.occ || []).filter(o => o.spot_code === spot && clashes(o, s, e));
+    if (!c.length) return s;
+    s = roundUp30(new Date(Math.max(...c.map(o => new Date(o.ends_at).getTime())) + 2 * GAP_MS));
+  }
+  return s;
+}
+function openPk(spot) {
+  const s = nextFree(spot, roundUp30(new Date()), 3 * 3600000), e = new Date(s.getTime() + 3 * 3600000);
+  S.pk = { spot, mode: 'ore', date: dateInput(s), from: hhmm(s), endDate: dateInput(e), to: dateInput(e) === dateInput(s) ? hhmm(e) : '23:30', plate: '', guest: '', unit: S.units[0]?.code };
+  showPk();
+}
+function pkRange() {
+  const p = S.pk, s = new Date(`${p.date}T${p.from || '00:00'}`), e = new Date(`${p.mode === 'zile' ? (p.endDate || p.date) : p.date}T${p.to || '00:00'}`);
+  return { s, e };
+}
+function pkStatusHTML() {
+  const p = S.pk, { s, e } = pkRange();
+  if (!(p.from && p.to) || !(s < e)) return '<p class="err">Plecarea trebuie să fie după sosire.</p>';
+  if (e - s > 7 * 86400000) return '<p class="err">Poți rezerva maximum 7 zile.</p>';
+  if (e <= new Date()) return '<p class="err">Intervalul ales e deja în trecut.</p>';
+  const c = (S.cache.occ || []).filter(o => o.spot_code === p.spot && clashes(o, s, e));
+  if (!c.length) return `<div class="note" style="background:var(--ok-soft)"><span><b style="color:var(--ok)">Locul ${p.spot} e liber</b> în intervalul ales.</span></div>`;
+  const nk = nextFree(p.spot, s, e - s);
+  return `<div class="note" style="background:var(--bad-soft)"><span><b style="color:var(--bad)">Locul ${p.spot} e ocupat</b> ${c.map(o => `${fmtDT(o.starts_at)}–${hhmm(o.ends_at)}`).join(', ')}. Între două rezervări rămâne o pauză de 1 oră. Primul interval liber începe ${fmtDT(nk)}. <button type="button" class="btn ghost sm" data-act="pk-next" data-k="${nk.toISOString()}">Mută rezervarea acolo</button></span></div>`;
+}
+async function pkModalHTML() {
+  const p = S.pk;
+  if (!S.cache.myPlates) {
+    const { data } = await sb.from('vehicles').select('plate, active').eq('person_id', S.me.id);
+    S.cache.myPlates = [...new Set((data || []).filter(v => v.active).map(v => v.plate))];
+  }
+  const now = new Date(), cur = (S.cache.occ || []).find(o => o.spot_code === p.spot && new Date(o.starts_at) <= now && new Date(o.ends_at) > now);
+  const up = (S.cache.occ || []).filter(o => o.spot_code === p.spot && new Date(o.starts_at) > now).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at)).slice(0, 4);
+  const today = dateInput(new Date()), max = dateInput(new Date(Date.now() + 30 * 86400000));
+  return `<div class="modal-bg" data-act="pk-close"></div><form class="modal pkmodal" id="pk-form" role="dialog" aria-modal="true" aria-labelledby="pk-h">
+  <div class="row between"><h2 id="pk-h">Rezervă locul ${p.spot}</h2><button type="button" class="btn quiet sm" data-act="pk-close" aria-label="Închide">${ic('x')}</button></div>
+  <p class="small">${cur ? `<span class="chip bad">Ocupat acum, până la ${hhmm(cur.ends_at)}</span>` : '<span class="chip ok">Liber acum</span>'}${up.length ? ` <span class="muted">Urmează pe acest loc: ${up.map(o => `${fmtDT(o.starts_at)}–${hhmm(o.ends_at)}`).join(', ')}</span>` : ''}</p>
+  <p class="small muted">${ORIENT}</p>
+  ${S.units.length > 1 ? `<label class="f">Pentru apartamentul<select id="pm-unit">${S.units.map(u => `<option ${u.code === p.unit ? 'selected' : ''}>${esc(u.code)}</option>`).join('')}</select></label>` : ''}
+  <div class="row" style="gap:12px"><span class="muted small">Cât timp?</span><div class="seg" style="min-width:240px">${[['ore', 'Câteva ore'], ['zile', 'Mai multe zile']].map(([k, l]) => `<button type="button" data-act="pk-mode" data-m="${k}" aria-pressed="${p.mode === k}">${l}</button>`).join('')}</div></div>
+  ${p.mode === 'zile' ? `<div class="form-grid"><label class="f">Ziua sosirii<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">Ora sosirii<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="1800"></label>
+   <label class="f">Ziua plecării<input type="date" id="pm-end" class="pm-f" value="${p.endDate}" min="${p.date}"></label><label class="f">Ora plecării<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="1800"></label></div>`
+    : `<div class="form-grid fg3"><label class="f">Ziua<input type="date" id="pm-date" class="pm-f" value="${p.date}" min="${today}" max="${max}"></label><label class="f">De la<input type="time" id="pm-from" class="pm-f" value="${p.from}" step="1800"></label><label class="f">Până la<input type="time" id="pm-to" class="pm-f" value="${p.to}" step="1800"></label></div>
+   <div class="row" style="gap:6px">${[1, 2, 3, 4, 6].map(h => `<button type="button" class="chip pick" data-act="pk-dur" data-h="${h}">${h} ${h === 1 ? 'oră' : 'ore'}</button>`).join('')}</div>`}
+  <div id="pk-status">${pkStatusHTML()}</div>
+  <div class="stack" style="gap:6px"><span class="muted small">Numărul mașinii</span>
+   ${S.cache.myPlates.length ? `<div class="row">${S.cache.myPlates.map(pl => `<button type="button" class="chip pick" data-act="pk-plate" data-p="${esc(pl)}" aria-pressed="${plateNorm(p.plate) === pl}">${esc(pl)}</button>`).join('')}</div>` : ''}
+   <div class="form-grid"><label class="f">Sau scrie numărul vizitatorului<input id="pm-plate" class="pm-f" value="${esc(p.plate)}" placeholder="ex. B 123 ABC" autocomplete="off"></label><label class="f">Cine vine? (opțional)<input id="pm-guest" class="pm-f" value="${esc(p.guest)}" placeholder="ex. părinții, instalator"></label></div></div>
+  <p class="err" id="pm-err"></p>
+  <div class="row" style="justify-content:flex-end"><button type="button" class="btn quiet" data-act="pk-close">Renunță</button><button class="btn" type="submit">${ic('parking')} Rezervă</button></div></form>`;
+}
+async function showPk() {
+  document.getElementById('pk-wrap')?.remove();
+  if (!S.pk) return;
+  const w = document.createElement('div'); w.id = 'pk-wrap'; w.innerHTML = await pkModalHTML(); document.body.appendChild(w);
+  w.querySelector('#pk-form').addEventListener('submit', onPkSubmit);
+  w.querySelectorAll('.pm-f').forEach(el => el.addEventListener('change', () => { readPk(); if (el.id === 'pm-date' || el.id === 'pm-from' || el.id === 'pm-to' || el.id === 'pm-end') document.getElementById('pk-status').innerHTML = pkStatusHTML(); }));
+}
+function readPk() {
+  const p = S.pk, g = id => document.getElementById(id); if (!p || !g('pm-date')) return;
+  p.date = g('pm-date').value || p.date; p.from = g('pm-from').value; p.to = g('pm-to').value;
+  if (g('pm-end')) p.endDate = g('pm-end').value || p.date; p.plate = g('pm-plate').value; p.guest = g('pm-guest').value;
+  if (g('pm-unit')) p.unit = g('pm-unit').value;
+}
+async function onPkSubmit(e) {
+  e.preventDefault(); readPk();
+  const p = S.pk, err = document.getElementById('pm-err'), { s, e: en } = pkRange(), plate = plateNorm(p.plate);
+  err.textContent = '';
+  if (!(s < en)) { err.textContent = 'Plecarea trebuie să fie după sosire.'; return; }
+  if (plate.length < 4) { err.textContent = 'Alege sau scrie numărul mașinii.'; return; }
+  // locul ales e orientativ: dacă e ocupat, luăm automat alt loc liber în același interval
+  const ok = sp => !(S.cache.occ || []).some(o => o.spot_code === sp && clashes(o, s, en));
+  const spot = ok(p.spot) ? p.spot : ALL_SPOTS.find(ok);
+  if (!spot) { err.textContent = 'Nu mai e niciun loc liber în intervalul ales. Alege altă oră.'; return; }
+  const { error } = await sb.from('reservations').insert({ spot_code: spot, unit_code: p.unit || S.units[0]?.code, created_by: S.me.id, source: isAdmin() ? 'admin' : 'app', plate, guest_name: p.guest.trim() || null, starts_at: s.toISOString(), ends_at: en.toISOString() });
+  if (error) { err.textContent = errMsg(error); return; }
+  S.pk = null; document.getElementById('pk-wrap')?.remove();
+  toast(`Rezervare făcută pentru ${plate}. Vizitatorul poate parca pe orice loc liber de vizitatori.`);
+  location.hash = '#istoric'; if (S.route === 'istoric') render();
+}
+
+/* istoric rezervări */
+async function pageHistory() {
+  const t = await tarif();
+  const codes = S.units.map(u => u.code);
+  if (!codes.length) return '<div class="head"><h1>Rezervările mele</h1></div><p class="muted">Nu ai nicio unitate legată.</p>';
+  const { data, error } = await sb.from('reservations').select('*').in('unit_code', codes).eq('status', 'activa').order('starts_at', { ascending: false }).limit(300);
+  if (error) throw error;
+  const now = new Date(), H = r => (new Date(r.ends_at) - new Date(r.starts_at)) / 3600000;
+  const cost = r => Math.max(0, H(r) - (t.ore_gratuite || 0)) * (t.lei_pe_ora || 0);
+  const up = data.filter(r => new Date(r.ends_at) > now).reverse(), past = data.filter(r => new Date(r.ends_at) <= now);
+  const row = (r, canCancel) => `<div class="item"><span class="grow stack" style="gap:2px"><span>${fmtDT(r.starts_at)} → ${dateInput(new Date(r.starts_at)) === dateInput(new Date(r.ends_at)) ? hhmm(r.ends_at) : fmtDT(r.ends_at)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · rezervat prin link' : ''} · ${esc(r.unit_code)}</span></span>${plateHTML(r.plate)}
+    <span class="hcost"><span class="small muted">${canCancel ? 'rezervat ' : ''}${hTxt(H(r))}</span><b>${canCancel ? '≈ ' : ''}${lei(cost(r))}</b></span>
+    ${canCancel ? `<button class="btn quiet sm" data-act="res-cancel" data-id="${r.id}">Anulează</button>` : ''}</div>`;
+  const tot = (l, label, est) => { const h = l.reduce((a, r) => a + H(r), 0), c = l.reduce((a, r) => a + cost(r), 0); return `<div class="tot"><span><b>${label}</b> <span class="muted small">· ${l.length} ${l.length === 1 ? 'rezervare' : 'rezervări'}</span></span><span class="row" style="gap:16px"><span>${hTxt(h)}</span><b style="font-size:20px">${est ? '≈ ' : ''}${lei(c)}</b></span></div>`; };
+  const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
+  const byMonth = {}; past.forEach(r => { const d = new Date(r.starts_at), k = `${LUNI[d.getMonth()]} ${d.getFullYear()}`; (byMonth[k] ||= []).push(r); });
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Rezervările mele</h1><p class="muted">Rezervările viitoare și cele trecute, cu orele și costul (${t.lei_pe_ora} lei/oră). Deocamdată se afișează orele rezervate; orele reale de la barieră se adaugă după legătura cu Metrici. Suma apare pe întreținere.</p></div><a class="btn" href="#parcare">${ic('plus')} Rezervare nouă</a></div>
+  <div class="card stack"><h3>Urmează (${up.length})</h3><div class="list">${up.map(r => row(r, true)).join('') || '<p class="muted">Nicio rezervare viitoare.</p>'}</div>${up.length ? tot(up, 'Total estimat', true) : ''}</div>
+  <div class="card stack"><h3>Trecute (${past.length})</h3>${Object.keys(byMonth).length ? Object.entries(byMonth).map(([m, l]) => `<h4 class="muted" style="margin:6px 0 0;text-transform:capitalize">${m}</h4><div class="list">${l.map(r => row(r, false)).join('')}</div>${tot(l, 'Total ' + m, false)}`).join('') : '<p class="muted">Încă nimic.</p>'}</div>`;
+}
+
+/* vehiculele mele */
+async function pageVehicles() {
+  const [{ data: veh, error }, { data: acc }] = await Promise.all([
+    sb.from('vehicles').select('*, parking_accounts(metrici_name, spaces, location)').eq('person_id', S.me.id).order('plate'),
+    sb.from('parking_accounts').select('*').eq('person_id', S.me.id)
   ]);
   if (error) throw error;
-  const span = to - from;
-  const rows = (spots || []).map(s => {
-    const bars = (occ || []).filter(o => o.spot_code === s.code).map(o => {
-      const a = Math.max(0, new Date(o.starts_at) - from) / span * 100, b = Math.min(span, new Date(o.ends_at) - from) / span * 100;
-      return `<i style="left:${a}%;width:${Math.max(.8, b - a)}%" title="${fmtTime(o.starts_at)}–${fmtTime(o.ends_at)}"></i>`;
-    }).join('');
-    return `<div class="occ-row"><span class="sn">${esc(s.code)}</span><div class="occ-bar">${bars}</div></div>`;
-  }).join('');
-  const start = new Date(); start.setMinutes(0, 0, 0); start.setHours(start.getHours() + 1);
-  if (dayStart(day) > dayStart(new Date())) { start.setTime(from.getTime()); start.setHours(10); }
-  const end = new Date(start.getTime() + 2 * 3600000);
-  const unitOpts = S.units.map(u => `<option value="${esc(u.code)}">${esc(u.code)}</option>`).join('');
-  const myList = (mine || []).filter(r => isAdmin() ? true : S.units.some(u => u.code === r.unit_code)).map(r => `<div class="item"><span class="chip gold">${esc(r.spot_code)}</span><div class="grow"><div>${plateHTML(r.plate)} ${esc(r.guest_name || '')} <span class="small muted">${esc(r.unit_code)}</span></div><div class="small muted">${fmtDT(r.starts_at)} → ${fmtDT(r.ends_at)}</div></div><button class="btn danger sm" data-act="res-cancel" data-id="${r.id}">Anulează</button></div>`).join('') || '<p class="muted">Nicio rezervare activă.</p>';
-  const dstr = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
-  return `<div class="head"><div><h1>Parcare vizitatori</h1><p class="muted">15 locuri. Între două rezervări pe același loc trebuie să rămână o pauză de 1 oră. Bariera se deschide automat pentru numărul rezervat, cu o oră înainte de începutul rezervării.</p></div></div>
-  <div class="grid g2">
-    <section class="card stack">
-      <h3>Rezervare nouă</h3>
-      ${S.units.length ? `<form id="res-form" class="form-grid">
-        <label class="f">Apartament<select id="r-unit">${unitOpts}</select></label>
-        <label class="f">Loc<select id="r-spot">${(spots || []).map(s => `<option>${esc(s.code)}</option>`).join('')}</select></label>
-        <label class="f">De la<input id="r-start" type="datetime-local" required value="${toLocalInput(start)}"></label>
-        <label class="f">Până la<input id="r-end" type="datetime-local" required value="${toLocalInput(end)}"></label>
-        <label class="f">Număr de înmatriculare<input id="r-plate" required placeholder="ex. B123ABC" autocapitalize="characters"></label>
-        <label class="f">Nume vizitator (opțional)<input id="r-guest"></label>
-        <div class="full row"><button class="btn" type="submit">Rezervă</button><span class="err" id="r-err" role="alert"></span></div>
-      </form>` : '<p class="muted">Nu ai nicio unitate legată de cont, deci nu poți rezerva încă.</p>'}
-    </section>
-    <section class="card stack"><h3>Rezervări active</h3><div class="list">${myList}</div></section>
-  </div>
-  <section class="card stack">
-    <div class="row between"><h3>Ocupare ${fmtDate(day)}</h3><label class="f" style="flex-direction:row;align-items:center">Ziua <input type="date" id="occ-day" value="${dstr}"></label></div>
-    <div class="legend"><span><i style="background:var(--ok-soft)"></i>liber</span><span><i style="background:var(--bad)"></i>ocupat</span></div>
-    <div>${rows}</div><div class="occ-scale"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
-  </section>`;
+  const accounts = acc || [], spaces = accounts.reduce((a, x) => a + (x.spaces || 0), 0), inside = (veh || []).filter(v => v.inside).length;
+  const st = v => !v.active ? ['Inactiv', 'line'] : v.expires_at && new Date(v.expires_at) < new Date() ? ['Expirat', 'bad'] : ['Activ', 'ok'];
+  const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
+    <td style="white-space:nowrap">${v.expires_at ? fmtDate(v.expires_at) : '<span class="muted">Nu expiră</span>'}</td><td><span class="chip ${s[1]}">${s[0]}</span></td>
+    <td>${v.inside ? '<span class="chip ok"><span class="dot"></span>Da</span>' : '<span class="muted">Nu</span>'}</td>
+    <td>${v.inside ? '<span class="small muted">nu se poate șterge cât e în complex</span>' : v.source === 'app' ? `<button class="btn quiet sm" data-act="veh-del" data-id="${v.id}" aria-label="Șterge ${esc(v.plate)}">${ic('x')}</button>` : '<span class="small muted">din Metrici</span>'}</td></tr>`; }).join('');
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Vehiculele mele</h1><p class="muted">Mașinile tale din lista barierei.</p></div></div>
+  ${accounts.length ? `<div class="note" style="background:var(--accent-soft)">${ic('parking')}<span><b style="color:var(--accent)">${inside} din ${spaces} ${spaces === 1 ? 'loc ocupat' : 'locuri ocupate'}.</b> Pot sta în complex în același timp maximum ${spaces} ${spaces === 1 ? 'mașină' : 'mașini'}; poți avea mai multe înregistrate. Starea „În complex” e cea de la importul din Metrici și se va actualiza automat după legătura cu bariera.</span></div>` : '<div class="note"><span>Nu ai încă un cont de parcare legat. Dacă ai loc de parcare, scrie administrației.</span></div>'}
+  <div class="card tablewrap"><table class="rep veh"><thead><tr><th>Număr</th><th>Cont / parcare</th><th>Expirare</th><th>Stare</th><th>În complex</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">Nicio mașină înregistrată.</td></tr>'}</tbody></table></div>
+  <form id="veh-form" class="card stack"><h3>Adaugă o mașină</h3>
+    <div class="form-grid"><label class="f">Număr de înmatriculare<input id="vh-plate" required placeholder="B 123 ABC" autocomplete="off"></label><span></span></div>
+    <div class="row"><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button><span class="muted small">Numărul va ajunge automat în lista barierei după legătura cu Metrici (în lucru).</span></div>
+    <p class="err" id="vh-err"></p></form>`;
 }
-async function onResSubmit(e) {
+async function onVehAdd(e) {
   e.preventDefault();
-  const err = document.getElementById('r-err'); err.textContent = '';
-  const s = new Date(document.getElementById('r-start').value), en = new Date(document.getElementById('r-end').value);
-  const plate = plateNorm(document.getElementById('r-plate').value);
-  if (plate.length < 4) { err.textContent = 'Numărul de înmatriculare pare incomplet.'; return; }
-  const row = { spot_code: document.getElementById('r-spot').value, unit_code: document.getElementById('r-unit').value, created_by: S.me.id, source: isAdmin() ? 'admin' : 'app', plate, guest_name: document.getElementById('r-guest').value.trim() || null, starts_at: s.toISOString(), ends_at: en.toISOString() };
-  const { error } = await sb.from('reservations').insert(row);
-  if (error) { err.textContent = errMsg(error); return; }
-  toast('Rezervarea a fost făcută.'); render();
+  const plate = plateNorm(document.getElementById('vh-plate').value), err = document.getElementById('vh-err');
+  if (plate.length < 4) { err.textContent = 'Numărul pare incomplet.'; return; }
+  const { error } = await sb.from('vehicles').insert({ plate, person_id: S.me.id, unit_code: S.units[0]?.code || null, source: 'app' });
+  if (error) { err.textContent = /duplicate|unique/i.test(error.message) ? 'Mașina e deja în listă.' : errMsg(error); return; }
+  S.cache.myPlates = null; toast('Mașina a fost adăugată.'); render();
 }
 
 /* pază */
@@ -469,7 +622,7 @@ async function render() {
     root.innerHTML = `<div class="login"><div class="card stack">${brand(52)}<h2>Contul nu e încă activ</h2><p class="muted">Contul tău de login există, dar nu e legat de lista asociației. Scrie-ne la aplicatie.avalonestate@gmail.com.</p><button class="btn quiet" data-act="logout">Ieșire</button></div></div>`;
     bind(); return;
   }
-  const pages = { acasa: pageHome, parcare: pageParking, paza: pageGuard, tichete: pageTickets, tichet: () => pageTicket(S.param), 'tichet-nou': pageNewTicket, anunturi: pageAnn, documente: pageDocs, contacte: pageContacts, profil: pageProfile, utilizatori: pageUsers };
+  const pages = { acasa: pageHome, parcare: pageParking, istoric: pageHistory, vehicule: pageVehicles, paza: pageGuard, tichete: pageTickets, tichet: () => pageTicket(S.param), 'tichet-nou': pageNewTicket, anunturi: pageAnn, documente: pageDocs, contacte: pageContacts, profil: pageProfile, utilizatori: pageUsers };
   let fn = pages[S.route] || pageHome;
   if ((S.route === 'utilizatori' && !isAdmin()) || (S.route === 'paza' && !isGuard())) fn = pageHome;
   if (!root.querySelector('.app')) root.innerHTML = shell(loading());
@@ -485,7 +638,7 @@ function bind() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
   on('login-form', 'submit', onLoginSubmit);
   on('pw-form', 'submit', onSetPassword);
-  on('res-form', 'submit', onResSubmit);
+  on('veh-form', 'submit', onVehAdd);
   on('reply-form', 'submit', onReply);
   on('nt-form', 'submit', onNewTicket);
   on('an-form', 'submit', onAnn);
@@ -524,6 +677,18 @@ document.addEventListener('click', async e => {
     document.body.appendChild(sh);
     setTimeout(() => document.addEventListener('click', function off(ev) { if (!sh.contains(ev.target) || ev.target.closest('a')) { sh.remove(); document.removeEventListener('click', off); } }), 0);
   }
+  if (a === 'pick-spot') { openPk(b.dataset.s); return; }
+  if (a === 'pk-close') { S.pk = null; document.getElementById('pk-wrap')?.remove(); return; }
+  if (a === 'pk-mode') { readPk(); S.pk.mode = b.dataset.m; if (S.pk.mode === 'zile' && S.pk.endDate === S.pk.date) { const d = new Date(S.pk.date + 'T00:00'); d.setDate(d.getDate() + 1); S.pk.endDate = dateInput(d); } showPk(); return; }
+  if (a === 'pk-dur') { readPk(); const st = new Date(`${S.pk.date}T${S.pk.from}`), en = new Date(st.getTime() + (+b.dataset.h) * 3600000); if (dateInput(en) !== S.pk.date) { S.pk.mode = 'zile'; S.pk.endDate = dateInput(en); } S.pk.to = hhmm(en); showPk(); return; }
+  if (a === 'pk-plate') { readPk(); S.pk.plate = b.dataset.p; showPk(); return; }
+  if (a === 'pk-next') { readPk(); const { s: s0, e: e0 } = pkRange(), dur = e0 - s0, ns = new Date(b.dataset.k), ne = new Date(ns.getTime() + dur); S.pk.date = dateInput(ns); S.pk.from = hhmm(ns); S.pk.endDate = dateInput(ne); S.pk.to = hhmm(ne); if (S.pk.endDate !== S.pk.date) S.pk.mode = 'zile'; showPk(); return; }
+  if (a === 'veh-del') {
+    if (!confirm('Ștergi mașina din listă?')) return;
+    const { error } = await sb.from('vehicles').delete().eq('id', b.dataset.id);
+    if (error) return toast(errMsg(error));
+    S.cache.myPlates = null; toast('Mașina a fost ștearsă.'); render(); return;
+  }
   if (a === 'res-cancel') {
     if (!confirm('Anulezi rezervarea?')) return;
     const { error } = await sb.from('reservations').update({ status: 'anulata' }).eq('id', b.dataset.id);
@@ -537,6 +702,8 @@ document.addEventListener('click', async e => {
     render();
   }
 });
+
+document.addEventListener('keydown', e => { const t = e.target.closest?.('[data-act="pick-spot"]'); if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openPk(t.dataset.s); } if (e.key === 'Escape' && S.pk) { S.pk = null; document.getElementById('pk-wrap')?.remove(); } });
 
 /* ---------- pornire ---------- */
 if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'email'; history.replaceState(null, '', location.pathname); }
