@@ -300,11 +300,12 @@ table.veh{min-width:900px}
 .occ-bar i{position:absolute;top:0;bottom:0;background:var(--bad);opacity:.75}
 .occ-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-left:62px}
 .msg.sys{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:14px;padding:4px 10px}
-.msg.loc{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--gold)}
-.msg.adm{background:var(--accent);color:#fff;border:1px solid var(--accent);border-left:4px solid #123f31}
+.msg.loc{background:#fbf1dc;border:1px solid #ecd9ad;border-left:4px solid var(--gold)}
+.msg.adm{background:#2f7f63;color:#fff;border:1px solid #2f7f63;border-left:4px solid #1a5a44}
 .msg.adm .who{color:#e3efe8;font-weight:700}
 .msg.adm a{color:#fff}
-.msg.internal{background:var(--gold-soft);border-left-style:dashed}
+.msg.internal{background:#eceef4;color:var(--ink);border:1px dashed #9aa3b8;border-left:4px dashed #6b7591}
+.msg.internal .who{color:#4d5670}
 .userrow td{vertical-align:top}
 .tab-row{display:flex;gap:6px;flex-wrap:wrap}
 .side .brand,.login .brand{flex-direction:column;align-items:center;text-align:center;gap:6px}
