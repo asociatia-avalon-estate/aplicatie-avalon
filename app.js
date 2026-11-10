@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'sb_publishable_LcS1AfZDqXco4wfHCsgMMQ_80AhjovO';
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 
 const root = document.getElementById('root');
-const S = { session: null, me: null, units: [], route: 'acasa', param: null, loginEmail: '', loginStep: 'email', busy: false, cache: {} };
+const S = { session: null, me: null, units: [], route: 'acasa', param: null, loginEmail: '', loginStep: 'parola', mustSetPassword: false, busy: false, cache: {} };
 
 /* ---------- utilitare ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,6 +34,8 @@ function errMsg(e) {
   if (/max_7_zile/.test(m)) return 'O rezervare poate dura cel mult 7 zile.';
   if (/interval_valid/.test(m)) return 'Ora de sfârșit trebuie să fie după ora de început.';
   if (/Token has expired|invalid/i.test(m) && S.loginStep === 'code') return 'Codul nu e corect sau a expirat. Cere un cod nou.';
+  if (/Invalid login credentials/i.test(m)) return 'Email sau parolă greșită. Dacă intri prima dată sau ai uitat parola, apasă „Prima dată aici / Am uitat parola”.';
+  if (/Email not confirmed/i.test(m)) return 'Contul nu e încă activat. Apasă „Prima dată aici” și intră cu codul primit pe email.';
   if (/rate limit|security purposes/i.test(m)) return 'Ai cerut prea multe coduri într-un timp scurt. Încearcă din nou peste un minut.';
   return m;
 }
@@ -82,31 +84,48 @@ function parseHash() {
 }
 window.addEventListener('hashchange', () => { parseHash(); render(); });
 
-/* ---------- login ---------- */
+/* ---------- login ----------
+   Pași: 'parola' (email + parolă, implicit) → sau 'email' (cer cod) → 'code' (introduc codul)
+   După intrarea cu cod, dacă utilizatorul nu are parolă (sau a cerut resetare), apare ecranul „Creează parola”. */
 function loginView() {
   const step = S.loginStep;
+  const head = {
+    parola: ['Intră în aplicație', 'Intră cu adresa de email și parola ta.'],
+    email: ['Prima intrare sau parolă uitată', 'Scrie adresa de email cu care ești înregistrat la asociație. Îți trimitem un cod de 6 cifre, apoi îți alegi parola.'],
+    code: ['Verifică emailul', `Am trimis un cod de 6 cifre la <b>${esc(S.loginEmail)}</b>. Verifică și folderul Spam.`]
+  }[step];
+  let form;
+  if (step === 'parola') form = `
+    <label class="f">Email<input id="lg-email" type="email" autocomplete="username" required value="${esc(S.loginEmail)}"></label>
+    <label class="f">Parola<input id="lg-pass" type="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se verifică…' : 'Intră'}</button>
+    <button class="btn quiet" type="button" data-act="login-code">Prima dată aici / Am uitat parola</button>`;
+  else if (step === 'email') form = `
+    <label class="f">Email<input id="lg-email" type="email" autocomplete="email" required value="${esc(S.loginEmail)}"></label>
+    <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se trimite…' : 'Trimite codul'}</button>
+    <button class="btn quiet" type="button" data-act="login-pass">Am deja parolă</button>`;
+  else form = `
+    <label class="f">Codul primit<input id="lg-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
+    <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se verifică…' : 'Continuă'}</button>
+    <button class="btn quiet" type="button" data-act="login-code">Altă adresă / cod nou</button>`;
   return `<div class="login"><div class="card">
     ${brand(52)}
-    <div><h2>Intră în aplicație</h2>
-    <p class="muted small">${step === 'email' ? 'Scrie adresa de email cu care ești înregistrat la asociație. Îți trimitem un cod de 6 cifre.' : `Am trimis un cod de 6 cifre la <b>${esc(S.loginEmail)}</b>. Verifică și folderul Spam.`}</p></div>
-    <form id="login-form" class="stack">
-      ${step === 'email'
-        ? `<label class="f">Email<input id="lg-email" type="email" autocomplete="email" required value="${esc(S.loginEmail)}"></label>
-           <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se trimite…' : 'Trimite codul'}</button>`
-        : `<label class="f">Codul primit<input id="lg-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
-           <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se verifică…' : 'Intră'}</button>
-           <button class="btn quiet" type="button" data-act="login-back">Altă adresă / cod nou</button>`}
-      <p class="err" id="lg-err" role="alert"></p>
-    </form>
+    <div><h2>${head[0]}</h2><p class="muted small">${head[1]}</p></div>
+    <form id="login-form" class="stack">${form}<p class="err" id="lg-err" role="alert"></p></form>
     <p class="muted small">Probleme la intrare? Scrie-ne la aplicatie.avalonestate@gmail.com.</p>
   </div></div>`;
 }
 async function onLoginSubmit(e) {
   e.preventDefault();
-  const errEl = document.getElementById('lg-err');
   S.busy = true;
   try {
-    if (S.loginStep === 'email') {
+    if (S.loginStep === 'parola') {
+      S.loginEmail = document.getElementById('lg-email').value.trim().toLowerCase();
+      const password = document.getElementById('lg-pass').value;
+      render();
+      const { error } = await sb.auth.signInWithPassword({ email: S.loginEmail, password });
+      if (error) throw error;
+    } else if (S.loginStep === 'email') {
       S.loginEmail = document.getElementById('lg-email').value.trim().toLowerCase();
       render();
       const { error } = await sb.auth.signInWithOtp({ email: S.loginEmail, options: { shouldCreateUser: true } });
@@ -117,13 +136,40 @@ async function onLoginSubmit(e) {
       render();
       const { error } = await sb.auth.verifyOtp({ email: S.loginEmail, token, type: 'email' });
       if (error) throw error;
-      S.loginStep = 'email';
+      S.mustSetPassword = true;   // după intrarea cu cod își (re)face parola
+      S.loginStep = 'parola';
     }
     S.busy = false; render();
   } catch (err) {
     S.busy = false; render();
     const el = document.getElementById('lg-err'); if (el) el.textContent = errMsg(err);
   }
+}
+const needsPassword = () => S.mustSetPassword || !S.session?.user?.user_metadata?.has_password;
+function setPasswordView() {
+  return `<div class="login"><div class="card">
+    ${brand(52)}
+    <div><h2>Creează-ți parola</h2><p class="muted small">Data viitoare intri direct cu emailul <b>${esc(S.session.user.email)}</b> și parola, fără cod.</p></div>
+    <form id="pw-form" class="stack">
+      <label class="f">Parola nouă (minim 8 caractere)<input id="pw-1" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="f">Repetă parola<input id="pw-2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se salvează…' : 'Salvează parola și intră'}</button>
+      <p class="err" id="pw-err" role="alert"></p>
+    </form>
+  </div></div>`;
+}
+async function onSetPassword(e) {
+  e.preventDefault();
+  const p1 = document.getElementById('pw-1').value, p2 = document.getElementById('pw-2').value, err = document.getElementById('pw-err');
+  if (p1.length < 8) { err.textContent = 'Parola trebuie să aibă cel puțin 8 caractere.'; return; }
+  if (p1 !== p2) { err.textContent = 'Cele două parole nu coincid.'; return; }
+  S.busy = true;
+  const { data, error } = await sb.auth.updateUser({ password: p1, data: { has_password: true } });
+  S.busy = false;
+  if (error) { err.textContent = /same|different/i.test(error.message) ? 'Alege o parolă diferită de cea veche.' : /weak|short|characters/i.test(error.message) ? 'Parola e prea simplă. Alege una mai lungă.' : errMsg(error); return; }
+  if (data?.user) S.session.user = data.user;
+  S.mustSetPassword = false;
+  toast('Parola a fost salvată.'); render();
 }
 
 /* ---------- încărcare profil ---------- */
@@ -418,6 +464,7 @@ let renderSeq = 0;
 async function render() {
   const seq = ++renderSeq;
   if (!S.session) { root.innerHTML = loginView(); bind(); return; }
+  if (needsPassword()) { root.innerHTML = setPasswordView(); bind(); return; }
   if (!S.me) {
     root.innerHTML = `<div class="login"><div class="card stack">${brand(52)}<h2>Contul nu e încă activ</h2><p class="muted">Contul tău de login există, dar nu e legat de lista asociației. Scrie-ne la aplicatie.avalonestate@gmail.com.</p><button class="btn quiet" data-act="logout">Ieșire</button></div></div>`;
     bind(); return;
@@ -437,6 +484,7 @@ async function render() {
 function bind() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
   on('login-form', 'submit', onLoginSubmit);
+  on('pw-form', 'submit', onSetPassword);
   on('res-form', 'submit', onResSubmit);
   on('reply-form', 'submit', onReply);
   on('nt-form', 'submit', onNewTicket);
@@ -464,7 +512,8 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
   if (a === 'logout') { await sb.auth.signOut(); S.me = null; S.units = []; S.cache = {}; location.hash = ''; return; }
-  if (a === 'login-back') { S.loginStep = 'email'; render(); }
+  if (a === 'login-code') { S.loginStep = 'email'; render(); }
+  if (a === 'login-pass') { S.loginStep = 'parola'; render(); }
   if (a === 'reload') render();
   if (a === 'tf') { S.cache.tf = b.dataset.v; render(); }
   if (a === 'uf') { S.cache.uf = b.dataset.v; render(); }
@@ -490,6 +539,7 @@ document.addEventListener('click', async e => {
 });
 
 /* ---------- pornire ---------- */
+if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'email'; history.replaceState(null, '', location.pathname); }
 parseHash();
 let started = false;
 // Notă: nu facem apeluri Supabase direct în callback (pot bloca); le amânăm cu setTimeout.
