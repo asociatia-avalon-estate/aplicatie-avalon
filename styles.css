@@ -349,3 +349,10 @@ table.veh{min-width:900px}
   .pkmodal .small{font-size:14px}
   .pkmodal .chip{padding:3px 10px}
 }
+/* poze la tichete */
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
+.photopick{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap}.thumbs:empty{display:none}
+.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.msg .att{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;white-space:normal}
+.msg .att img{width:104px;height:104px;object-fit:cover;border-radius:8px;display:block;border:1px solid rgba(0,0,0,.15);background:#fff}
