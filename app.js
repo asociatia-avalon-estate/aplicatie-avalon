@@ -492,25 +492,45 @@ async function pageVehicles() {
   const spaces = pk?.spaces || 0, inside = pk?.inside ?? (veh || []).filter(v => v.inside).length, accounts = spaces ? [1] : [];
   const MS = { de_adaugat: ['Se trimite la barieră…', 'line'], activ: ['În barieră', 'ok'], in_cont: ['În contul tău de parcare', 'ok'], suspendat: ['Oprit temporar: locurile sunt ocupate', 'warn'], fara_parcare: ['Fără loc de parcare', 'line'], eroare: ['Nu a ajuns la barieră, reîncercăm', 'bad'] };
   const st = v => !v.active ? ['Inactiv', 'line'] : v.expires_at && new Date(v.expires_at) < new Date() ? ['Expirat', 'bad'] : v.source === 'app' ? (MS[v.metrici_state] || MS.de_adaugat) : ['Activ', 'ok'];
-  const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
+  const SCH = { oricand: 'Oricând', program: 'Program de lucru', weekend: 'Weekend' };
+  const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.info || '—')}<br><span class="muted">${SCH[v.schedule] || 'Oricând'}${v.starts_at && new Date(v.starts_at) > new Date() ? ' · de la ' + fmtDate(v.starts_at) : ''}</span></td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
     <td style="white-space:nowrap">${v.expires_at ? fmtDate(v.expires_at) : '<span class="muted">Nu expiră</span>'}</td><td><span class="chip ${s[1]}">${s[0]}</span></td>
     <td>${v.inside ? '<span class="chip ok"><span class="dot"></span>Da</span>' : '<span class="muted">Nu</span>'}</td>
     <td>${v.inside ? '<span class="small muted">nu se poate șterge cât e în complex</span>' : `<button class="btn quiet sm" data-act="veh-del" data-id="${v.id}" data-p="${esc(v.plate)}" aria-label="Șterge ${esc(v.plate)}">${ic('x')}</button>`}</td></tr>`; }).join('');
-  return `<div class="head"><div class="stack" style="gap:4px"><h1>Vehiculele mele</h1><p class="muted">Mașinile tale din lista barierei.</p></div></div>
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Vehiculele mele</h1><p class="muted">Mașinile tale din lista barierei.</p></div><button class="btn" data-act="veh-new">${ic('plus')} Adaugă o mașină</button></div>
   ${accounts.length ? `<div class="note" style="background:var(--accent-soft)">${ic('parking')}<span><b style="color:var(--accent)">${inside} din ${spaces} ${spaces === 1 ? 'loc ocupat' : 'locuri ocupate'}.</b> Pot sta în complex în același timp maximum ${spaces} ${spaces === 1 ? 'mașină' : 'mașini'}; poți avea mai multe înregistrate. Când toate locurile sunt ocupate, celelalte mașini adăugate din aplicație sunt oprite temporar la barieră și pornesc singure când iese o mașină. „În complex” se actualizează automat de la barieră.</span></div>` : '<div class="note"><span>Unitatea ta nu are încă un loc de parcare în evidență. Dacă ai loc de parcare, scrie administrației.</span></div>'}
-  <div class="card tablewrap"><table class="rep veh"><thead><tr><th>Număr</th><th>Cont / parcare</th><th>Expirare</th><th>Stare</th><th>În complex</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">Nicio mașină înregistrată.</td></tr>'}</tbody></table></div>
-  <form id="veh-form" class="card stack"><h3>Adaugă o mașină</h3>
-    <div class="form-grid"><label class="f">Număr de înmatriculare<input id="vh-plate" required placeholder="B 123 ABC" autocomplete="off"></label><span></span></div>
-    <div class="row"><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button><span class="muted small">Numărul ajunge automat în barieră în câteva secunde.</span></div>
-    <p class="err" id="vh-err"></p></form>`;
+  <div class="card tablewrap"><table class="rep veh"><thead><tr><th>Număr</th><th>Info / program</th><th>Cont / parcare</th><th>Expirare</th><th>Stare</th><th>În complex</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">Nicio mașină înregistrată.</td></tr>'}</tbody></table></div>
+`;
+}
+function vehModal() {
+  const now = new Date(), d = toLocalInput(now);
+  openModal(`<form class="modal pkmodal" id="veh-form" role="dialog" aria-modal="true" aria-labelledby="vh-h"><div class="row between"><h2 id="vh-h">Adaugă o mașină</h2><button type="button" class="btn quiet sm" data-act="m-close" aria-label="Închide">${ic('x')}</button></div>
+   <div class="form-grid">
+    <label class="f">Număr de înmatriculare<input id="vh-plate" required placeholder="B 123 ABC" autocomplete="off" autocapitalize="characters"></label>
+    <label class="f">A cui e mașina / info<input id="vh-info" maxlength="80" placeholder="ex. Andrei, Dacia Logan albastră"></label>
+    <label class="f">Program de acces<select id="vh-sched"><option value="oricand">Oricând</option><option value="program">Program de lucru</option><option value="weekend">Weekend</option></select></label>
+    <label class="f">De când<input id="vh-start" type="datetime-local" value="${d}"></label>
+    <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;cursor:pointer"><input id="vh-never" type="checkbox" checked style="width:18px;height:18px;margin:0"> Nu expiră</label>
+    <label class="f" id="vh-exp-wrap" hidden>Expiră la<input id="vh-exp" type="datetime-local" value="${d.slice(0, 10)}T23:59"></label></div>
+   <p class="muted small">Mașina intră în contul tău de parcare și bariera o recunoaște în câteva secunde, în perioada aleasă. Pentru o mașină temporară (de exemplu a unui musafir care stă câteva zile) debifează „Nu expiră” și alege data.</p>
+   <p class="err" id="vh-err"></p>
+   <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">${ic('plus')} Adaugă mașina</button></div></form>`, w => {
+    w.querySelector('#veh-form').addEventListener('submit', onVehAdd);
+    w.querySelector('#vh-never').addEventListener('change', e => { w.querySelector('#vh-exp-wrap').hidden = e.target.checked; });
+  });
 }
 async function onVehAdd(e) {
   e.preventDefault();
   const plate = plateNorm(document.getElementById('vh-plate').value), err = document.getElementById('vh-err');
   if (plate.length < 4) { err.textContent = 'Numărul pare incomplet.'; return; }
-  const { error } = await sb.from('vehicles').insert({ plate, person_id: S.me.id, unit_code: S.units[0]?.code || null, source: 'app' });
+  const sv = document.getElementById('vh-start').value, never = document.getElementById('vh-never').checked, ev = document.getElementById('vh-exp').value;
+  const starts = sv ? new Date(sv) : new Date(), exp = never ? null : (ev ? new Date(ev) : null);
+  if (!never && !exp) { err.textContent = 'Alege data la care expiră.'; return; }
+  if (exp && exp <= starts) { err.textContent = 'Expirarea trebuie să fie după „De când”.'; return; }
+  const { error } = await sb.from('vehicles').insert({ plate, person_id: S.me.id, unit_code: S.units[0]?.code || null, source: 'app',
+    info: document.getElementById('vh-info').value.trim() || null, schedule: document.getElementById('vh-sched').value, starts_at: starts.toISOString(), expires_at: exp ? exp.toISOString() : null });
   if (error) { err.textContent = /duplicate|unique/i.test(error.message) ? 'Mașina e deja în listă.' : errMsg(error); return; }
-  S.cache.myPlates = null; toast('Mașina a fost adăugată.'); render();
+  closeModal(); S.cache.myPlates = null; toast('Mașina a fost adăugată.'); render();
 }
 
 /* ---------- pagini (ca în prototip) ---------- */
@@ -1183,6 +1203,7 @@ async function pagesClick(a, b) {
   const pid = b.dataset.id, P = () => (S.cache.people || []).find(x => x.id === pid);
   switch (a) {
     case 'm-close': closeModal(); return true;
+    case 'veh-new': vehModal(); return true;
     case 'new-ticket': S.cache.newTicket = true; if (S.route !== 'tichete') location.hash = '#tichete'; else render(); return true;
     case 'cancel-ticket': S.cache.newTicket = false; render(); return true;
     case 'tfilter': S.cache.tf2 = b.dataset.k; render(); return true;
