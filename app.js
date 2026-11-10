@@ -45,7 +45,7 @@ function errMsg(e) {
 }
 
 const ICON = {
-  camera: 'M3 8h3.5l2-3h7l2 3H21v11H3zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+  clip: 'M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9',
   globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
   ticket: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4zM10 5v14',
@@ -743,8 +743,11 @@ async function pageTickets() {
    <div class="list">${(data || []).map(tRow).join('') || '<p class="muted" style="padding:12px 4px">Niciun tichet aici.</p>'}</div>
    <p class="muted small">${(data || []).length}${(data || []).length === 300 ? '+ (se afișează cele mai recente 300 – folosește căutarea)' : ''} tichete</p></div>`;
 }
-/* poze la tichete: se micșorează în telefon (max 1920×1080, JPEG ~150–300 KB) înainte de urcare; bucket privat „tichete/<id tichet>/” */
-const PHOTO_MAX = 6;
+/* fișiere la tichete: pozele se micșorează în telefon (max 1920×1080, JPEG ~150–300 KB); restul (PDF, Word, Excel) se urcă așa cum sunt, max 10 MB.
+   Bucket privat „tichete/<id tichet>/”; numele fișierului rămâne în cale după „~”. */
+const FILE_MAX = 6, FILE_MB = 10, FILE_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt';
+const isImgPath = p => /\.(jpe?g|png|webp|gif)$/i.test(p);
+const fileName = p => decodeURIComponent((p.split('/').pop() || '').replace(/^[^~]*~/, ''));
 async function shrinkPhoto(file) {
   let src;
   try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
@@ -757,21 +760,26 @@ async function shrinkPhoto(file) {
   if (!blob) throw new Error('Poza nu se poate pregăti.');
   return blob;
 }
-async function uploadPhotos(ticketId, input) {
-  const files = [...(input?.files || [])].slice(0, PHOTO_MAX), paths = [];
+const stamp = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const safeName = n => String(n || 'fisier').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+async function uploadFiles(ticketId, input) {
+  const files = [...(input?.files || [])].slice(0, FILE_MAX), paths = [];
   for (const f of files) {
-    const path = `${ticketId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.jpg`;
-    const { error } = await sb.storage.from('tichete').upload(path, await shrinkPhoto(f), { contentType: 'image/jpeg' });
+    const img = /^image\//.test(f.type) && !/gif|svg/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+    if (!img && f.size > FILE_MB * 1048576) throw new Error(`Fișierul ${f.name} are peste ${FILE_MB} MB.`);
+    const body = img ? await shrinkPhoto(f) : f, name = img ? safeName(f.name).replace(/\.[^.]*$/, '') + '.jpg' : safeName(f.name);
+    const path = `${ticketId}/${stamp()}~${name}`;
+    const { error } = await sb.storage.from('tichete').upload(path, body, { contentType: img ? 'image/jpeg' : (f.type || 'application/octet-stream') });
     if (error) throw error;
     paths.push(path);
   }
   return paths;
 }
-const photoPicker = id => `<div class="photopick"><label class="btn quiet sm" for="${id}" tabindex="0">${ic('camera')} Adaugă poze</label><input type="file" id="${id}" accept="image/*" multiple class="vh"><span class="muted small" id="${id}-n"></span></div><div class="thumbs" id="${id}-prev"></div>`;
-function onPhotosPicked(e) {
+const filePicker = id => `<div class="photopick"><label class="btn quiet sm" for="${id}" tabindex="0">${ic('clip')} Atașează fișiere</label><input type="file" id="${id}" accept="${FILE_ACCEPT}" multiple class="vh"><span class="muted small" id="${id}-n"></span></div><div class="thumbs" id="${id}-prev"></div>`;
+function onFilesPicked(e) {
   const inp = e.target, n = inp.files.length, prev = document.getElementById(inp.id + '-prev'), lbl = document.getElementById(inp.id + '-n');
-  prev.innerHTML = [...inp.files].slice(0, PHOTO_MAX).map(f => `<img src="${URL.createObjectURL(f)}" alt="">`).join('');
-  lbl.textContent = !n ? '' : n > PHOTO_MAX ? `Maximum ${PHOTO_MAX} poze; se trimit primele ${PHOTO_MAX}.` : n === 1 ? '1 poză aleasă' : `${n} poze alese`;
+  prev.innerHTML = [...inp.files].slice(0, FILE_MAX).map(f => /^image\//.test(f.type) ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<span class="fchip" data-notr>${ic('doc')}${esc(f.name)}</span>`).join('');
+  lbl.textContent = !n ? '' : n > FILE_MAX ? `Maximum ${FILE_MAX} fișiere; se trimit primele ${FILE_MAX}.` : n === 1 ? '1 fișier ales' : `${n} fișiere alese`;
 }
 function ticketForm() {
   return `<form class="card stack" id="nt-form"><div class="row between"><h3>Tichet nou</h3><button type="button" class="btn quiet sm" data-act="cancel-ticket">Renunță</button></div>
@@ -780,7 +788,7 @@ function ticketForm() {
     <label class="f">Categorie<select id="nt-cat">${TK_CATS.map(c => `<option>${c}</option>`).join('')}</select></label>
     <label class="f">Unitate<select id="nt-unit">${S.units.map(u => `<option>${esc(u.code)}</option>`).join('')}<option value="">Spațiu comun / fără unitate</option></select></label>
     <label class="f full">Detalii<textarea id="nt-body" class="bigtext" required placeholder="Unde exact, de când, ce ai observat"></textarea></label>
-    <div class="full stack" style="gap:6px">${photoPicker('nt-photos')}</div>
+    <div class="full stack" style="gap:6px">${filePicker('nt-photos')}</div>
    </div>
    <div class="row"><button class="btn" type="submit">Trimite tichetul</button><span class="muted small">Administrația primește tichetul imediat.</span><span class="err" id="nt-err"></span></div></form>`;
 }
@@ -789,7 +797,7 @@ async function ticketDetail(id) {
   if (!t) return `<div class="card"><p class="muted">Tichetul nu există sau nu ai acces la el.</p></div>`;
   const allP = (msgs || []).flatMap(m => m.attachments || []), urls = {};
   if (allP.length) { const { data: su } = await sb.storage.from('tichete').createSignedUrls(allP, 3600); (su || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
-  const att = m => (m.attachments || []).length ? `<div class="att">${m.attachments.map((p, i) => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Poză ${i + 1}" loading="lazy"></a>` : '').join('')}</div>` : '';
+  const att = m => (m.attachments || []).length ? `<div class="att">${m.attachments.map((p, i) => !urls[p] ? '' : isImgPath(p) ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Poză ${i + 1}" loading="lazy"></a>` : `<a class="fchip" data-notr href="${urls[p]}" target="_blank" rel="noopener">${ic('doc')}${esc(fileName(p))}</a>`).join('')}</div>` : '';
   const thread = (msgs || []).map(m => {
     if (m.kind !== 'mesaj' && m.kind !== 'nota') return `<div class="msg sys">${fmtDT(m.created_at)} · ${esc(m.author_name || '')}: ${m.kind === 'status' ? 'status → ' : esc(m.kind) + ' → '}${esc(m.body)}</div>`;
     const mine = isAdmin() ? m.from_admin : m.author_id === S.me.id;
@@ -798,18 +806,18 @@ async function ticketDetail(id) {
   return `<div class="card stack" id="ticket-detail"><div class="row between"><div class="stack" style="gap:2px"><h3>${esc(t.title)}</h3><span class="muted small">${esc(t.code || '')} · ${esc(t.category || '')} · deschis ${fmtDate(t.created_at)}${t.unit_code ? ' · ' + esc(t.unit_code) : ''}${t.author_name ? ' · ' + esc(t.author_name) : ''}</span></div>
    <div class="row">${isAdmin() ? `<label class="f" style="flex-direction:row;align-items:center;gap:6px">Status <select id="tk-status" data-id="${t.id}">${Object.entries(TICKET_ST).map(([k, [l]]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : stChip(t.status)}<a class="btn quiet sm" href="#tichete" aria-label="Închide">${ic('x')}</a></div></div>
    <div class="thread">${thread || '<p class="muted">Niciun mesaj.</p>'}</div>
-   <form class="stack" id="reply-form" data-id="${t.id}" style="gap:8px"><label class="f"><span class="muted small">Răspuns</span><textarea id="reply-text" class="bigtext" placeholder="Scrie un mesaj"></textarea></label>${photoPicker('reply-photos')}
+   <form class="stack" id="reply-form" data-id="${t.id}" style="gap:8px"><label class="f"><span class="muted small">Răspuns</span><textarea id="reply-text" class="bigtext" placeholder="Scrie un mesaj"></textarea></label>${filePicker('reply-photos')}
     <div class="row"><button class="btn" type="submit">Trimite</button>${isAdmin() ? '<label class="row small"><input type="checkbox" id="reply-int"> notă internă (doar administrația o vede)</label>' : '<span class="muted small">Caseta se poate mări trăgând de colțul din dreapta jos.</span>'}</div></form></div>`;
 }
 async function onReply(e) {
   e.preventDefault();
   const id = e.target.dataset.id, body = document.getElementById('reply-text').value.trim(), pin = document.getElementById('reply-photos');
-  if (!body && !pin?.files.length) return toast('Scrie un mesaj sau adaugă o poză.');
+  if (!body && !pin?.files.length) return toast('Scrie un mesaj sau atașează un fișier.');
   const internal = !!document.getElementById('reply-int')?.checked, btn = e.target.querySelector('button[type="submit"]');
   let attachments = [];
   if (pin?.files.length) {
-    btn.disabled = true; btn.textContent = 'Se trimit pozele…';
-    try { attachments = await uploadPhotos(id, pin); } catch (x) { btn.disabled = false; btn.textContent = 'Trimite'; return toast('Nu am putut urca pozele: ' + errMsg(x)); }
+    btn.disabled = true; btn.textContent = 'Se trimit fișierele…';
+    try { attachments = await uploadFiles(id, pin); } catch (x) { btn.disabled = false; btn.textContent = 'Trimite'; return toast('Nu am putut urca fișierele: ' + errMsg(x)); }
   }
   const { error } = await sb.from('ticket_messages').insert({ ticket_id: id, author_id: S.me.id, from_admin: isAdmin(), body, attachments: attachments.length ? attachments : null, kind: internal ? 'nota' : 'mesaj', internal, author_name: fullName(S.me), author_role: isAdmin() ? 'A' : 'T' });
   if (error) { btn.disabled = false; btn.textContent = 'Trimite'; return toast(errMsg(error)); }
@@ -824,11 +832,11 @@ async function onNewTicket(e) {
   const pin = document.getElementById('nt-photos'), btn = e.target.querySelector('button[type="submit"]');
   let attachments = [], photoErr = '';
   if (pin?.files.length) {
-    btn.disabled = true; btn.textContent = 'Se trimit pozele…';
-    try { attachments = await uploadPhotos(data.id, pin); } catch (x) { photoErr = errMsg(x); }
+    btn.disabled = true; btn.textContent = 'Se trimit fișierele…';
+    try { attachments = await uploadFiles(data.id, pin); } catch (x) { photoErr = errMsg(x); }
   }
   await sb.from('ticket_messages').insert({ ticket_id: data.id, author_id: S.me.id, from_admin: isAdmin(), body: document.getElementById('nt-body').value.trim(), attachments: attachments.length ? attachments : null, kind: 'mesaj', author_name: fullName(S.me), author_role: isAdmin() ? 'A' : 'T' });
-  S.cache.newTicket = false; toast(photoErr ? 'Tichetul a fost trimis, dar pozele nu: ' + photoErr : 'Tichetul a fost trimis.'); location.hash = `#tichete/${data.id}`;
+  S.cache.newTicket = false; toast(photoErr ? 'Tichetul a fost trimis, dar fișierele nu: ' + photoErr : 'Tichetul a fost trimis.'); location.hash = `#tichete/${data.id}`;
 }
 
 /* documente */
@@ -908,6 +916,19 @@ async function onContact(e) {
 /* fereastră (modal) generică */
 function openModal(html, after) { closeModal(); const w = document.createElement('div'); w.id = 'm-wrap'; w.innerHTML = `<div class="modal-bg" data-act="m-close"></div>${html}`; document.body.appendChild(w); after?.(w); w.querySelector('input,select,textarea,button')?.focus(); }
 function closeModal() { document.getElementById('m-wrap')?.remove(); }
+// confirmare în fereastra aplicației (în loc de fereastra browserului)
+function askConfirm({ title, html = '', ok = 'Confirmă', danger = false }) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (done) return; done = true; closeModal(); res(v); };
+    openModal(`<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="cf-h"><div class="row between"><h2 id="cf-h">${esc(title)}</h2><button type="button" class="btn quiet sm" data-cf="0" aria-label="Închide">${ic('x')}</button></div>${html}
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-cf="0">Renunță</button><button type="button" class="btn ${danger ? 'softbad' : ''}" data-cf="1">${esc(ok)}</button></div></div>`, w => {
+      w.querySelectorAll('[data-cf]').forEach(b => b.addEventListener('click', ev => { ev.stopPropagation(); fin(b.dataset.cf === '1'); }));
+      w.querySelector('.modal-bg')?.addEventListener('click', () => fin(false));
+      w.addEventListener('keydown', ev => { if (ev.key === 'Escape') fin(false); });
+      setTimeout(() => w.querySelector('[data-cf="1"]')?.focus(), 0);
+    });
+  });
+}
 
 /* contul meu */
 function pageProfile() {
@@ -1359,8 +1380,8 @@ function bind() {
   on('vl-unit', 'change', e => { S.cache.linkUnit = e.target.value; render(); });
   on('reply-form', 'submit', onReply);
   on('nt-form', 'submit', onNewTicket);
-  on('nt-photos', 'change', onPhotosPicked);
-  on('reply-photos', 'change', onPhotosPicked);
+  on('nt-photos', 'change', onFilesPicked);
+  on('reply-photos', 'change', onFilesPicked);
   on('an-form', 'submit', onAnn);
   on('ct-form', 'submit', onContact);
   on('pf-form', 'submit', onProfile);
@@ -1410,7 +1431,7 @@ document.addEventListener('click', async e => {
   if (a === 'pk-plate') { readPk(); S.pk.plate = b.dataset.p; showPk(); return; }
   if (a === 'pk-next') { readPk(); const { s: s0, e: e0 } = pkRange(), dur = e0 - s0, ns = new Date(b.dataset.k), ne = new Date(ns.getTime() + dur); S.pk.date = dateInput(ns); S.pk.from = hhmm(ns); S.pk.endDate = dateInput(ne); S.pk.to = hhmm(ne); if (S.pk.endDate !== S.pk.date) S.pk.mode = 'zile'; showPk(); return; }
   if (a === 'veh-del') {
-    if (!confirm(`Ștergi mașina ${b.dataset.p || ''}? Numărul se scoate și din barieră, deci nu va mai putea intra în complex. O poți adăuga din nou oricând.`)) return;
+    if (!await askConfirm({ title: 'Ștergi mașina?', html: `<div>${plateHTML(b.dataset.p || '')}</div><p>Numărul se scoate și din barieră, deci mașina nu va mai putea intra în complex. O poți adăuga din nou oricând.</p>`, ok: 'Șterge mașina', danger: true })) return;
     const { error } = await sb.from('vehicles').delete().eq('id', b.dataset.id);
     if (error) return toast(errMsg(error));
     S.cache.myPlates = null; toast('Mașina a fost ștearsă.'); render(); return;
