@@ -331,3 +331,5 @@ table.veh{min-width:900px}
   .map{min-width:470px}
 }
 @media (prefers-reduced-motion:reduce){.swipe-hint span{animation:none}}
+/* casetele verzi deschise ies în evidență și pe fundalul nou */
+.card[style*="--accent-soft"],.note[style*="--accent-soft"]{border:1px solid #b5d3c1}
