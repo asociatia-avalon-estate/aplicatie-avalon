@@ -304,5 +304,5 @@ table.veh{min-width:900px}
 .userrow td{vertical-align:top}
 .tab-row{display:flex;gap:6px;flex-wrap:wrap}
 .side .brand,.login .brand{flex-direction:column;align-items:center;text-align:center;gap:6px}
-.side .brand img{height:auto!important;width:180px!important}
-.login .brand img{height:auto!important;width:200px!important}
+.side .brand img{height:auto!important;width:140px!important}
+.login .brand img{height:auto!important;width:160px!important}
