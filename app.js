@@ -33,7 +33,7 @@ function errMsg(e) {
   if (e?.code === '23P01' || /fara_suprapunere/.test(m)) return 'Locul e ocupat în intervalul ales. Alege alt loc sau altă oră.';
   if (/max_7_zile/.test(m)) return 'O rezervare poate dura cel mult 7 zile.';
   if (/interval_valid/.test(m)) return 'Ora de sfârșit trebuie să fie după ora de început.';
-  if (/Token has expired|invalid/i.test(m) && S.loginStep === 'code') return 'Codul nu e corect sau a expirat. Cere un cod nou.';
+  if (/Token has expired|invalid/i.test(m) && (S.loginStep === 'code' || S.loginStep === 'invite')) return 'Codul nu e corect sau a expirat. Cere un cod nou.';
   if (/Invalid login credentials/i.test(m)) return 'Email sau parolă greșită. Dacă intri prima dată sau ai uitat parola, apasă „Prima dată aici / Am uitat parola”.';
   if (/Email not confirmed/i.test(m)) return 'Contul nu e încă activat. Apasă „Prima dată aici” și intră cu codul primit pe email.';
   if (/rate limit|security purposes/i.test(m)) return 'Ai cerut prea multe coduri într-un timp scurt. Încearcă din nou peste un minut.';
@@ -98,6 +98,7 @@ function loginView() {
   const head = {
     parola: ['Intră în aplicație', 'Intră cu adresa de email și parola ta.'],
     email: ['Prima intrare sau parolă uitată', 'Scrie adresa de email cu care ești înregistrat la asociație. Îți trimitem un cod de 6 cifre, apoi îți alegi parola.'],
+    invite: ['Bun venit!', 'Scrie adresa de email pe care ai primit invitația și codul de 6 cifre din email. Apoi îți alegi parola.'],
     code: ['Verifică emailul', `Am trimis un cod de 6 cifre la <b>${esc(S.loginEmail)}</b>. Verifică și folderul Spam.`]
   }[step];
   let form;
@@ -109,6 +110,12 @@ function loginView() {
   else if (step === 'email') form = `
     <label class="f">Email<input id="lg-email" type="email" autocomplete="email" required value="${esc(S.loginEmail)}"></label>
     <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se trimite…' : 'Trimite codul'}</button>
+    <button class="btn quiet" type="button" data-act="login-pass">Am deja parolă</button>`;
+  else if (step === 'invite') form = `
+    <label class="f">Email<input id="lg-email" type="email" autocomplete="email" required value="${esc(S.loginEmail)}"></label>
+    <label class="f">Codul din email<input id="lg-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
+    <button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Se verifică…' : 'Continuă'}</button>
+    <button class="btn quiet" type="button" data-act="login-code">Codul a expirat – trimite unul nou</button>
     <button class="btn quiet" type="button" data-act="login-pass">Am deja parolă</button>`;
   else form = `
     <label class="f">Codul primit<input id="lg-code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
@@ -138,6 +145,7 @@ async function onLoginSubmit(e) {
       if (error) throw error;
       S.loginStep = 'code';
     } else {
+      if (S.loginStep === 'invite') S.loginEmail = document.getElementById('lg-email').value.trim().toLowerCase();
       const token = document.getElementById('lg-code').value.trim();
       render();
       const { error } = await sb.auth.verifyOtp({ email: S.loginEmail, token, type: 'email' });
@@ -547,7 +555,7 @@ async function latestAnnHTML() {
   const isNew = !(reads || []).some(r => r.announcement_id === a.id);
   return `<a class="card ann-banner" href="#anunturi">${ic('mega')}<span class="grow stack" style="gap:2px"><span class="row" style="gap:8px">${isNew ? '<span class="chip bad">nou</span>' : ''}<span class="chip ${ANN_CATS[a.kind] || 'line'}">${esc(a.kind)}</span><span class="muted small">${fmtDate(a.published_at)}</span></span><b class="title">${esc(a.title_ro)}</b></span><span class="muted small">Toate anunțurile ›</span></a>`;
 }
-const docRow = d => `<div class="item">${ic('doc')}<span class="grow stack" style="gap:2px"><span class="title">${esc(d.name)}</span><span class="muted small">${esc(d.category)} · adăugat ${fmtDate(d.created_at)}</span></span>${d.url ? `<a class="btn quiet sm" href="${esc(d.url)}" target="_blank" rel="noopener">Deschide</a>` : '<span class="muted small">fără fișier</span>'}${isAdmin() && S.route === 'documente' ? `<button class="btn quiet sm" data-act="doc-del" data-id="${d.id}" aria-label="Șterge ${esc(d.name)}">${ic('trash')}</button>` : ''}</div>`;
+const docRow = d => `<div class="item">${ic('doc')}<span class="grow stack" style="gap:2px"><span class="title">${esc(d.name)}</span><span class="muted small">${esc(d.category)} · adăugat ${fmtDate(d.created_at)}</span></span>${d.url?.startsWith('storage:') ? `<button class="btn quiet sm" data-act="doc-open" data-p="${esc(d.url.slice(8))}">Deschide</button>` : d.url ? `<a class="btn quiet sm" href="${esc(d.url)}" target="_blank" rel="noopener">Deschide</a>` : '<span class="muted small">fără fișier</span>'}${isAdmin() && S.route === 'documente' ? `<button class="btn quiet sm" data-act="doc-del" data-id="${d.id}" data-p="${d.url?.startsWith('storage:') ? esc(d.url.slice(8)) : ''}" aria-label="Șterge ${esc(d.name)}">${ic('trash')}</button>` : ''}</div>`;
 const tRow = t => `<a class="item" href="#tichete/${t.id}" style="color:inherit;text-decoration:none"><span class="grow stack" style="gap:2px"><span class="title">${esc(t.title)}</span><span class="muted small">${esc(t.code || '')}${t.unit_code ? ' · ' + esc(t.unit_code) : ''} · ${esc(t.category || '')} · ${fmtDate(t.updated_at || t.created_at)}${isAdmin() && t.author_name ? ' · ' + esc(t.author_name) : ''}</span></span>${stChip(t.status)}</a>`;
 const rRow = r => `<div class="item"><b style="font-family:var(--display);font-size:24px;width:44px">${esc(r.spot_code)}</b><span class="grow stack" style="gap:2px"><span>${timeTxt(r)} · ${esc(r.unit_code)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · prin link' : ''}${r.entered_at ? ` · intrat ${hhmm(r.entered_at)}${r.exited_at ? `, ieșit ${hhmm(r.exited_at)}` : ''}` : ''}</span></span>${plateHTML(r.plate)}</div>`;
 
@@ -744,7 +752,7 @@ async function onNewTicket(e) {
 }
 
 /* documente */
-const DCATS = ['Toate', 'Regulamente', 'Ședințe', 'Hotărâri', 'Contracte', 'Financiar', 'Formulare', 'Altele'];
+const DCATS = ['Toate', 'Regulamente', 'Ședințe', 'Hotărâri', 'Contracte', 'Financiar', 'Formulare', 'Informări', 'Altele'];
 async function pageDocs() {
   const { data, error } = await sb.from('documents').select('*').order('created_at', { ascending: false }); if (error) throw error;
   const cat = S.cache.dcat || 'Toate', q = norm(S.cache.dq || '');
@@ -753,7 +761,8 @@ async function pageDocs() {
   ${S.cache.newDoc ? `<form class="card stack" id="doc-form"><div class="row between"><h3>Document nou</h3><button type="button" class="btn quiet sm" data-act="cancel-doc">Renunță</button></div>
    <div class="form-grid"><label class="f full">Nume<input id="dc-name" required placeholder="ex. Proces-verbal AG – noiembrie 2026"></label>
    <label class="f">Categorie<select id="dc-cat">${DCATS.slice(1).map(c => `<option>${c}</option>`).join('')}</select></label>
-   <label class="f">Link de partajare (Google Drive / OneDrive)<input id="dc-link" type="url" placeholder="https://..."></label>
+   <label class="f">Fișier (PDF, max 50 MB)<input id="dc-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.png"></label>
+   <label class="f">sau link (Google Drive / OneDrive)<input id="dc-link" type="url" placeholder="https://..."></label>
    <label class="f full">Cuvinte-cheie (opțional, ajută la căutare)<input id="dc-tags" placeholder="ex. pv adunare generala"></label></div>
    <div class="row"><button class="btn" type="submit">Salvează</button><span class="err" id="dc-err"></span></div></form>` : ''}
   <div class="card stack">
@@ -763,8 +772,21 @@ async function pageDocs() {
 }
 async function onDoc(e) {
   e.preventDefault(); const v = id => document.getElementById(id).value.trim() || null;
-  const { error } = await sb.from('documents').insert({ name: v('dc-name'), category: v('dc-cat'), url: v('dc-link'), tags: v('dc-tags'), created_by: S.me.id });
-  if (error) { document.getElementById('dc-err').textContent = errMsg(error); return; }
+  const errEl = document.getElementById('dc-err'), f = document.getElementById('dc-file').files[0];
+  let url = v('dc-link');
+  if (f) {
+    if (f.size > 50 * 1024 * 1024) { errEl.textContent = 'Fișierul are peste 50 MB.'; return; }
+    const ext = (f.name.match(/\.[a-z0-9]+$/i) || ['.pdf'])[0].toLowerCase();
+    const base = norm(v('dc-name') || f.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'document';
+    const path = `${new Date().toISOString().slice(0, 10)}_${base}_${Date.now().toString(36)}${ext}`;
+    errEl.textContent = 'Se încarcă...';
+    const up = await sb.storage.from('documente').upload(path, f, { contentType: f.type || 'application/pdf' });
+    if (up.error) { errEl.textContent = errMsg(up.error); return; }
+    url = 'storage:' + path;
+  }
+  if (!url) { errEl.textContent = 'Alege un fișier sau pune un link.'; return; }
+  const { error } = await sb.from('documents').insert({ name: v('dc-name'), category: v('dc-cat'), url, tags: v('dc-tags'), created_by: S.me.id });
+  if (error) { errEl.textContent = errMsg(error); if (f) await sb.storage.from('documente').remove([url.slice(8)]); return; }
   S.cache.newDoc = false; toast('Document adăugat.'); render();
 }
 
@@ -924,7 +946,7 @@ async function pageMembers() {
    <div class="row"><button class="btn" type="submit">${ic('plus')} Trimite cererea</button><span class="muted small">Persoana primește invitația pe email după ce administrația aprobă.</span><span class="err" id="um-err"></span></div></form>`;
 }
 async function invitePerson(p) {
-  const { error } = await sb.auth.signInWithOtp({ email: p.email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname + '#prima-intrare' } });
+  const { error } = await sb.auth.signInWithOtp({ email: p.email, options: { shouldCreateUser: true, data: { invite: '1', first_name: p.first_name || '' }, emailRedirectTo: location.origin + location.pathname + '#prima-intrare' } });
   if (error) throw error;
   const upd = { invited_at: new Date().toISOString(), invites_count: (p.invites_count || 0) + 1, ...(p.status === 'neinvitat' ? { status: 'invitat' } : {}) };
   await sb.from('people').update(upd).eq('id', p.id); Object.assign(p, upd);
@@ -1167,7 +1189,8 @@ async function pagesClick(a, b) {
     case 'dcat': S.cache.dcat = b.dataset.c; render(); return true;
     case 'new-doc': S.cache.newDoc = true; render(); return true;
     case 'cancel-doc': S.cache.newDoc = false; render(); return true;
-    case 'doc-del': if (!confirm('Ștergi documentul din listă?')) return true; { const { error } = await sb.from('documents').delete().eq('id', pid); if (error) toast(errMsg(error)); else render(); } return true;
+    case 'doc-del': if (!confirm('Ștergi documentul? Se șterge și fișierul.')) return true; { const { error } = await sb.from('documents').delete().eq('id', pid); if (error) toast(errMsg(error)); else { if (b.dataset.p) await sb.storage.from('documente').remove([b.dataset.p]); render(); } } return true;
+    case 'doc-open': { const w = window.open('', '_blank'); const { data, error } = await sb.storage.from('documente').createSignedUrl(b.dataset.p, 600); if (error || !data?.signedUrl) { if (w) w.close(); toast('Nu am putut deschide documentul.'); } else if (w) w.location = data.signedUrl; else location.href = data.signedUrl; } return true;
     case 'copy-t': try { await navigator.clipboard.writeText(b.dataset.t); toast('Copiat.'); } catch { prompt('Copiază:', b.dataset.t); } return true;
     case 'c-edit': contactModal(pid); return true;
     case 'ann-del': if (!confirm('Ștergi anunțul? Dispare pentru toți locatarii.')) return true; { const { error } = await sb.from('announcements').delete().eq('id', pid); if (error) toast(errMsg(error)); else render(); } return true;
@@ -1307,7 +1330,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('keydown', e => { const t = e.target.closest?.('[data-act="pick-spot"]'); if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openPk(t.dataset.s); } if (e.key === 'Escape' && S.pk) { S.pk = null; document.getElementById('pk-wrap')?.remove(); } });
 
 /* ---------- pornire ---------- */
-if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'email'; history.replaceState(null, '', location.pathname); }
+if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'invite'; history.replaceState(null, '', location.pathname); }
 parseHash();
 let started = false;
 // Notă: nu facem apeluri Supabase direct în callback (pot bloca); le amânăm cu setTimeout.
