@@ -490,7 +490,7 @@ async function pageVehicles() {
   ]);
   if (error) throw error;
   const spaces = pk?.spaces || 0, inside = pk?.inside ?? (veh || []).filter(v => v.inside).length, accounts = spaces ? [1] : [];
-  const MS = { de_adaugat: ['Se trimite la barieră…', 'line'], activ: ['În barieră', 'ok'], suspendat: ['Oprit temporar: locurile sunt ocupate', 'warn'], fara_parcare: ['Fără loc de parcare', 'line'], eroare: ['Nu a ajuns la barieră, reîncercăm', 'bad'] };
+  const MS = { de_adaugat: ['Se trimite la barieră…', 'line'], activ: ['În barieră', 'ok'], in_cont: ['În contul tău de parcare', 'ok'], suspendat: ['Oprit temporar: locurile sunt ocupate', 'warn'], fara_parcare: ['Fără loc de parcare', 'line'], eroare: ['Nu a ajuns la barieră, reîncercăm', 'bad'] };
   const st = v => !v.active ? ['Inactiv', 'line'] : v.expires_at && new Date(v.expires_at) < new Date() ? ['Expirat', 'bad'] : v.source === 'app' ? (MS[v.metrici_state] || MS.de_adaugat) : ['Activ', 'ok'];
   const rows = (veh || []).map(v => { const s = st(v); return `<tr><td>${plateHTML(v.plate)}</td><td class="small">${esc(v.parking_accounts?.metrici_name || 'adăugat din aplicație')}<br><span class="muted">${v.parking_accounts?.location === 'Avalon-Interior' ? 'parcarea subterană' : v.parking_accounts ? 'parcarea de afară' : ''}</span></td>
     <td style="white-space:nowrap">${v.expires_at ? fmtDate(v.expires_at) : '<span class="muted">Nu expiră</span>'}</td><td><span class="chip ${s[1]}">${s[0]}</span></td>
