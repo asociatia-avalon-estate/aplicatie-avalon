@@ -60,8 +60,7 @@ const ICON = {
   car: 'M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 13h18M7 16h.01M17 16h.01'
 };
 const ic = (n, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[n]}"/></svg>`;
-const LEAF = ['#73a12f', '#1e6b38', '#f2b21a', '#e3651d', '#d23b2b', '#4e8b6c'];
-const logo = (s = 44) => `<svg width="${s}" height="${s}" viewBox="-56 -56 112 112" aria-hidden="true">${LEAF.map((c, i) => `<g transform="rotate(${i * 60})"><path d="M0,-9 C15,-18 17,-38 2,-53 C-15,-40 -15,-20 0,-9 Z" fill="${c}"/><path d="M0,-13 Q4,-30 1,-46" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".9"/></g>`).join('')}</svg>`;
+const logo = (s = 44) => `<img src="logo.png" alt="" style="height:${s}px;width:auto;display:block">`;
 const brand = (s = 44) => `<a class="brand" href="#acasa">${logo(s)}<span><span class="t1">ASOCIAȚIA DE PROPRIETARI</span><br><span class="t2">AVALON ESTATE</span></span></a>`;
 const plateHTML = p => `<span class="plate" aria-label="Număr ${esc(p)}"><span class="eu">RO</span><span class="num">${esc(p)}</span></span>`;
 
