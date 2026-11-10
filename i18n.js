@@ -217,6 +217,15 @@ const EN = {
 "Maximum # poze; se trimit primele #.": "Maximum # photos; the first # will be sent.",
 "Se trimit pozele…": "Uploading photos…",
 "Scrie un mesaj sau adaugă o poză.": "Write a message or add a photo.",
+"Atașează fișiere": "Attach files",
+"# fișier ales": "# file selected",
+"# fișiere alese": "# files selected",
+"Maximum # fișiere; se trimit primele #.": "Maximum # files; the first # will be sent.",
+"Se trimit fișierele…": "Uploading files…",
+"Scrie un mesaj sau atașează un fișier.": "Write a message or attach a file.",
+"Ștergi mașina?": "Delete this car?",
+"Numărul se scoate și din barieră, deci mașina nu va mai putea intra în complex. O poți adăuga din nou oricând.": "The number is also removed from the barrier, so the car will no longer be able to enter. You can add it again at any time.",
+"Șterge mașina": "Delete car",
 "Poza nu se poate citi.": "The photo can't be read.",
 "Poza nu se poate pregăti.": "The photo can't be prepared.",
 "Intrare": "Entry",
@@ -621,8 +630,9 @@ const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iul
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const mon = m => { const i = LUNI.indexOf(String(m).toLowerCase()); return i < 0 ? m : MONTHS[i]; };
 const RULES = [
-  [/^Nu am putut urca pozele: (.+)$/, 'The photos could not be uploaded: $1'],
-  [/^Tichetul a fost trimis, dar pozele nu: (.+)$/, 'The ticket was sent, but the photos were not: $1'],
+  [/^Nu am putut urca fișierele: (.+)$/, 'The files could not be uploaded: $1'],
+  [/^Tichetul a fost trimis, dar fișierele nu: (.+)$/, 'The ticket was sent, but the files were not: $1'],
+  [/^Fișierul (.+) are peste (\d+) MB\.$/, 'The file $1 is larger than $2 MB.'],
   [/^Acces în aplicație pentru (.+)$/, 'App access for $1'],
   [/^Invitația a plecat la (.+)\.$/, 'The invitation was sent to $1.'],
   [/^Am trimis un link de confirmare la (.+)$/, 'We sent a confirmation link to $1'],
