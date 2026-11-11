@@ -372,3 +372,7 @@ table.users th,table.users td{padding-left:6px;padding-right:6px}
 table.users td:last-child .btn{font-size:13px;padding:4px 8px}
 table.users .mplates{grid-template-columns:max-content}
 table.users .ucell{max-width:190px}
+/* Tichete necitite (ca la mesageria de pe telefon): bulină albastră + titlu îngroșat */
+.udot{flex:none;width:10px;height:10px;border-radius:50%;background:#1a73e8;display:inline-block}
+.item.unread .title{font-weight:700;color:var(--ink,#111)}
+.item.unread{background:linear-gradient(90deg,rgba(26,115,232,.06),transparent 60%)}
