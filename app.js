@@ -590,7 +590,7 @@ async function latestAnnHTML() {
   return `<a class="card ann-banner" href="#anunturi">${ic('mega')}<span class="grow stack" style="gap:2px"><span class="row" style="gap:8px">${isNew ? '<span class="chip bad">nou</span>' : ''}<span class="chip ${ANN_CATS[a.kind] || 'line'}">${esc(a.kind)}</span><span class="muted small">${fmtDate(a.published_at)}</span></span><b class="title">${esc(a.title_ro)}</b></span><span class="muted small">Toate anunțurile ›</span></a>`;
 }
 const docRow = d => `<div class="item">${ic('doc')}<span class="grow stack" style="gap:2px"><span class="title">${esc(d.name)}</span><span class="muted small">${esc(d.category)} · adăugat ${fmtDate(d.created_at)}</span></span>${d.url?.startsWith('storage:') ? `<button class="btn quiet sm" data-act="doc-open" data-p="${esc(d.url.slice(8))}">Deschide</button>` : d.url ? `<a class="btn quiet sm" href="${esc(d.url)}" target="_blank" rel="noopener">Deschide</a>` : '<span class="muted small">fără fișier</span>'}${isAdmin() && S.route === 'documente' ? `<button class="btn quiet sm" data-act="doc-del" data-id="${d.id}" data-p="${d.url?.startsWith('storage:') ? esc(d.url.slice(8)) : ''}" aria-label="Șterge ${esc(d.name)}">${ic('trash')}</button>` : ''}</div>`;
-const tRow = t => `<a class="item" href="#tichete/${t.id}" style="color:inherit;text-decoration:none"><span class="grow stack" style="gap:2px"><span class="title">${esc(t.title)}</span><span class="muted small">${esc(t.code || '')}${t.unit_code ? ' · ' + esc(t.unit_code) : ''} · ${esc(t.category || '')} · ${fmtDate(t.updated_at || t.created_at)}${isAdmin() && t.author_name ? ' · ' + esc(t.author_name) : ''}</span></span>${t.nAtt ? `<span class="attn" title="Are ${t.nAtt} ${t.nAtt === 1 ? 'fișier atașat' : 'fișiere atașate'}">${ic('clip')}${t.nAtt}</span>` : ''}${stChip(t.status)}</a>`;
+const tRow = t => `<a class="item${t.unread ? ' unread' : ''}" href="#tichete/${t.id}" style="color:inherit;text-decoration:none">${t.unread ? '<span class="udot" title="Necitit" aria-label="Necitit"></span>' : ''}<span class="grow stack" style="gap:2px"><span class="title">${esc(t.title)}</span><span class="muted small">${esc(t.code || '')}${t.unit_code ? ' · ' + esc(t.unit_code) : ''} · ${esc(t.category || '')} · ${fmtDate(t.updated_at || t.created_at)}${isAdmin() && t.author_name ? ' · ' + esc(t.author_name) : ''}</span></span>${t.nAtt ? `<span class="attn" title="Are ${t.nAtt} ${t.nAtt === 1 ? 'fișier atașat' : 'fișiere atașate'}">${ic('clip')}${t.nAtt}</span>` : ''}${stChip(t.status)}</a>`;
 const rRow = r => `<div class="item"><b style="font-family:var(--display);font-size:24px;width:44px">${esc(r.spot_code)}</b><span class="grow stack" style="gap:2px"><span>${timeTxt(r)} · ${esc(r.unit_code)}</span><span class="muted small">${esc(r.guest_name || 'Vizitator')}${r.source === 'link' ? ' · prin link' : ''}${r.entered_at ? ` · intrat ${hhmm(r.entered_at)}${r.exited_at ? `, ieșit ${hhmm(r.exited_at)}` : ''}` : ''}</span></span>${plateHTML(r.plate)}</div>`;
 
 /* acasă – locatar */
@@ -731,20 +731,30 @@ async function pageTickets() {
   const f = S.cache.tf2 || 'deschise', s = (S.cache.tq || '').trim(), admin = isAdmin();
   let q = sb.from('tickets').select('id, code, title, status, category, unit_code, updated_at, created_at, author_name').order('updated_at', { ascending: false }).limit(300);
   if (f === 'nou') q = q.eq('status', 'nou'); else if (f === 'in_lucru') q = q.in('status', ['in_lucru', 'in_asteptare']); else if (f === 'deschise') q = q.in('status', OPEN_ST); else if (f === 'rezolvate') q = q.in('status', ['rezolvat', 'inchis', 'respins']);
-  if (s) { const x = s.replace(/[%,()]/g, ' '); q = q.or(`title.ilike.%${x}%,code.ilike.%${x}%,unit_code.ilike.%${x}%,author_name.ilike.%${x}%`); }
-  const [{ data, error }, { data: am }] = await Promise.all([q, sb.from('ticket_messages').select('ticket_id, attachments').not('attachments', 'is', null)]); if (error) throw error;
+  const srch = qq => { if (!s) return qq; const x = s.replace(/[%,()]/g, ' '); return qq.or(`title.ilike.%${x}%,code.ilike.%${x}%,unit_code.ilike.%${x}%,author_name.ilike.%${x}%`); };
+  q = srch(q);
+  // tichetul deschis acum devine citit (înainte de calculul celor necitite)
+  if (S.param) await sb.from('ticket_reads').upsert({ ticket_id: S.param, person_id: S.me.id, read_at: new Date().toISOString(), unread: false }, { onConflict: 'ticket_id,person_id' });
+  const [{ data: d0, error }, { data: am }, { data: ur }] = await Promise.all([q, sb.from('ticket_messages').select('ticket_id, attachments').not('attachments', 'is', null), sb.rpc('tickets_unread')]); if (error) throw error;
+  // necititele apar primele, oricare le-ar fi statusul (și cele închise, dacă cineva a mai scris)
+  const unr = new Set((ur || []).map(r => r.ticket_id)), have = new Set((d0 || []).map(t => t.id)), miss = [...unr].filter(id => !have.has(id));
+  let extra = [];
+  if (miss.length) { const { data: ex } = await srch(sb.from('tickets').select('id, code, title, status, category, unit_code, updated_at, created_at, author_name').in('id', miss.slice(0, 200))); extra = ex || []; }
+  const data = [...d0 || [], ...extra]; data.forEach(t => { t.unread = unr.has(t.id); });
+  data.sort((a, b) => (b.unread - a.unread) || String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+  const nUnr = data.filter(t => t.unread).length;
   // câte fișiere are fiecare tichet (iconița cu agrafă din listă)
   const nAtt = {}; (am || []).forEach(m => { const n = (m.attachments || []).length; if (n) nAtt[m.ticket_id] = (nAtt[m.ticket_id] || 0) + n; });
   (data || []).forEach(t => { t.nAtt = nAtt[t.id] || 0; });
   const detail = S.param ? await ticketDetail(S.param) : '';
-  return `<div class="head"><div class="stack" style="gap:4px"><h1>Tichete</h1><p class="muted">${admin ? 'Toate sesizările locatarilor. Schimbă statusul și răspunde direct din tichet.' : 'Scrie administrației ce problemă ai. Primești răspunsul aici.'}</p></div>
+  return `<div class="head"><div class="stack" style="gap:4px"><h1>Tichete</h1><p class="muted">${admin ? 'Toate sesizările locatarilor. Schimbă statusul și răspunde direct din tichet.' : 'Scrie administrației ce problemă ai. Primești răspunsul aici.'}</p>${nUnr ? `<span class="row small" style="gap:6px"><span class="udot"></span><b>${nUnr === 1 ? '1 tichet necitit' : nUnr + ' tichete necitite'}</b><span class="muted">– apar primele în listă</span></span>` : ''}</div>
    ${S.cache.newTicket ? '' : `<button class="btn" data-act="new-ticket">${ic('plus')} Tichet nou</button>`}</div>
   ${S.cache.newTicket ? ticketForm() : ''}${detail}
   <div class="card stack">
    <label class="gsearch" style="max-width:none" for="t-q">${ic('search')}<input id="t-q" type="search" value="${esc(S.cache.tq || '')}" placeholder="${admin ? 'Caută după titlu, cod, apartament sau nume' : 'Caută în tichetele tale'}" autocomplete="off"></label>
    <div class="row">${[['deschise', 'Deschise'], ['nou', 'Noi'], ['in_lucru', 'În lucru'], ['rezolvate', 'Rezolvate / închise'], ['toate', 'Toate']].map(([k, l]) => `<button class="chip pick" aria-pressed="${f === k}" data-act="tfilter" data-k="${k}">${l}</button>`).join('')}</div>
    <div class="list">${(data || []).map(tRow).join('') || '<p class="muted" style="padding:12px 4px">Niciun tichet aici.</p>'}</div>
-   <p class="muted small">${(data || []).length}${(data || []).length === 300 ? '+ (se afișează cele mai recente 300 – folosește căutarea)' : ''} tichete</p></div>`;
+   <p class="muted small">${(d0 || []).length}${(d0 || []).length === 300 ? '+ (se afișează cele mai recente 300 – folosește căutarea)' : ''} tichete</p></div>`;
 }
 /* fișiere la tichete: pozele se micșorează în telefon (max 1920×1080, JPEG ~150–300 KB); restul (PDF, Word, Excel) se urcă așa cum sunt, max 10 MB.
    Bucket privat „tichete/<id tichet>/”; numele fișierului rămâne în cale după „<cod>_”. */
@@ -807,7 +817,7 @@ async function ticketDetail(id) {
     return `<div class="msg ${mine ? 'me' : ''} ${m.from_admin ? 'adm' : 'loc'} ${m.internal ? 'internal' : ''}"><div class="who">${m.from_admin ? 'Administrație' : esc(m.author_name || (t.unit_code ? 'Ap. ' + t.unit_code : ''))}${m.internal ? ' · notă internă' : ''} · ${fmtDT(m.created_at)}</div>${esc(String(m.body || '').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim())}${att(m)}</div>`;
   }).join('');
   return `<div class="card stack" id="ticket-detail"><div class="row between"><div class="stack" style="gap:2px"><h3>${esc(t.title)}</h3><span class="muted small">${esc(t.code || '')} · ${esc(t.category || '')} · deschis ${fmtDate(t.created_at)}${t.unit_code ? ' · ' + esc(t.unit_code) : ''}${t.author_name ? ' · ' + esc(t.author_name) : ''}</span></div>
-   <div class="row">${isAdmin() ? `<label class="f" style="flex-direction:row;align-items:center;gap:6px">Status <select id="tk-status" data-id="${t.id}">${Object.entries(TICKET_ST).map(([k, [l]]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : stChip(t.status)}<a class="btn quiet sm" href="#tichete" aria-label="Închide">${ic('x')}</a></div></div>
+   <div class="row">${isAdmin() ? `<label class="f" style="flex-direction:row;align-items:center;gap:6px">Status <select id="tk-status" data-id="${t.id}">${Object.entries(TICKET_ST).map(([k, [l]]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : stChip(t.status)}<button class="btn quiet sm" data-act="tk-unread" data-id="${t.id}" title="Tichetul apare din nou ca necitit în listă">${ic('mail')} Marchează ca necitit</button><a class="btn quiet sm" href="#tichete" aria-label="Închide">${ic('x')}</a></div></div>
    <div class="thread">${thread || '<p class="muted">Niciun mesaj.</p>'}</div>
    <form class="stack" id="reply-form" data-id="${t.id}" style="gap:8px"><label class="f"><span class="muted small">Răspuns</span><textarea id="reply-text" class="bigtext" placeholder="Scrie un mesaj"></textarea></label>${filePicker('reply-photos')}
     <div class="row"><button class="btn" type="submit">Trimite</button>${isAdmin() ? '<label class="row small"><input type="checkbox" id="reply-int"> notă internă (doar administrația o vede)</label>' : '<span class="muted small">Caseta se poate mări trăgând de colțul din dreapta jos.</span>'}</div></form></div>`;
@@ -1302,6 +1312,7 @@ async function pagesClick(a, b) {
     case 'new-ticket': S.cache.newTicket = true; if (S.route !== 'tichete') location.hash = '#tichete'; else render(); return true;
     case 'cancel-ticket': S.cache.newTicket = false; render(); return true;
     case 'tfilter': S.cache.tf2 = b.dataset.k; render(); return true;
+    case 'tk-unread': { const { error } = await sb.from('ticket_reads').upsert({ ticket_id: b.dataset.id, person_id: S.me.id, unread: true }, { onConflict: 'ticket_id,person_id' }); if (error) { toast(errMsg(error)); return true; } toast('Tichetul apare ca necitit.'); location.hash = '#tichete'; return true; }
     case 'dcat': S.cache.dcat = b.dataset.c; render(); return true;
     case 'new-doc': S.cache.newDoc = true; render(); return true;
     case 'cancel-doc': S.cache.newDoc = false; render(); return true;
