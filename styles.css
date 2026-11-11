@@ -360,3 +360,4 @@ table.veh{min-width:900px}
 .fchip .ico{width:16px;height:16px;flex:none}
 .msg .att{align-items:flex-start}
 .attn{display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:13px;margin-right:8px;white-space:nowrap}.attn .ico{width:15px;height:15px}
+.pkc{white-space:nowrap;line-height:1.3}.pkc+.pkc{margin-top:4px}.pkc .small{display:block;white-space:normal;max-width:180px}
