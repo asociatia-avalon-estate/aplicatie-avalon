@@ -1237,9 +1237,9 @@ async function pageReservations() {
     <label class="f">Cine a rezervat<select id="rz-src">${opt('toate', src, 'Toate')}${opt('app', src, 'Locatarul (din aplicație)')}${opt('link', src, 'Vizitatorul (prin link)')}${opt('admin', src, 'Administrația')}</select></label>
     <label class="f">Stare<select id="rz-st">${opt('toate', stf, 'Toate')}${opt('viitoare', stf, 'Urmează')}${opt('acum', stf, 'În desfășurare')}${opt('incheiata', stf, 'Încheiate')}${opt('depasite', stf, 'Au depășit intervalul')}</select></label></div>
    <p class="muted small">${list.length} rezervări · ${lei(list.reduce((a, r) => a + resCost(r), 0))}</p>
-   <div class="tablewrap"><table class="rep rez"><thead><tr><th>Rezervat</th><th>Loc</th><th>Apartament</th><th>Vizitator</th><th>Număr</th><th>Rezervat de</th><th>Intrare–ieșire (barieră)</th><th class="num">Cost</th></tr></thead><tbody>
+   <div class="tablewrap"><table class="rep rez"><thead><tr><th>Rezervat</th><th>Loc</th><th>Apartament</th><th>Vizitator</th><th>Număr</th><th>Rezervat de</th><th>Intrare–ieșire (barieră)</th><th class="num">Cost</th><th></th></tr></thead><tbody>
     ${list.map(r => { const s = state(r); return `<tr><td style="white-space:nowrap">${timeTxt(r)}</td><td><b>${esc(r.spot_code)}</b></td><td>${esc(r.unit_code)}</td><td>${esc(r.guest_name || '—')}${r.guest_phone ? `<div class="muted small">${esc(r.guest_phone)}</div>` : ''}</td><td>${plateHTML(r.plate)}</td><td>${SRC[r.source] || r.source}</td>
-     <td style="white-space:nowrap">${r.entered_at ? `${hhmm(r.entered_at)}–${r.exited_at ? (dateInput(new Date(r.exited_at)) !== dateInput(new Date(r.entered_at)) ? fmtDT(r.exited_at) : hhmm(r.exited_at)) : 'acum'}${overMin(r) ? ` <span class="chip warn">+${overMin(r)} min</span>` : ''}` : resHours(r).noShow ? '<span class="muted">nu a venit</span>' : `<span class="chip ${RST[s][1]}">${RST[s][0]}</span>`}</td><td class="num">${lei(resCost(r))}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">Nicio rezervare pentru filtrele alese.</td></tr>'}
+     <td style="white-space:nowrap">${r.entered_at ? `${hhmm(r.entered_at)}–${r.exited_at ? (dateInput(new Date(r.exited_at)) !== dateInput(new Date(r.entered_at)) ? fmtDT(r.exited_at) : hhmm(r.exited_at)) : 'acum'}${overMin(r) ? ` <span class="chip warn">+${overMin(r)} min</span>` : ''}` : resHours(r).noShow ? '<span class="muted">nu a venit</span>' : `<span class="chip ${RST[s][1]}">${RST[s][0]}</span>`}</td><td class="num">${lei(resCost(r))}</td><td>${s !== 'incheiata' || (r.entered_at && !r.exited_at) ? `<button class="btn quiet sm" data-act="res-cancel" data-id="${r.id}" data-p="${esc(r.plate)}"${r.entered_at && !r.exited_at ? ' data-in="1"' : ''}>Anulează</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="muted">Nicio rezervare pentru filtrele alese.</td></tr>'}
    </tbody></table></div></div>`;
 }
 async function downloadReportXLSX() {
@@ -1440,7 +1440,7 @@ document.addEventListener('click', async e => {
     S.cache.myPlates = null; toast('Mașina a fost ștearsă.'); render(); return;
   }
   if (a === 'res-cancel') {
-    if (!confirm('Anulezi rezervarea?')) return;
+    if (!await askConfirm({ title: 'Anulezi rezervarea?', html: `${b.dataset.p ? `<div>${plateHTML(b.dataset.p)}</div>` : ''}<p>Numărul vizitatorului se scoate din barieră în cel mult un minut, iar rezervarea nu se mai plătește.</p>${b.dataset.in ? '<p class="err">Mașina e acum în parcare. După anulare, bariera nu o mai recunoaște la ieșire: paza va trebui să ridice bariera manual.</p>' : ''}`, ok: 'Anulează rezervarea', danger: true })) return;
     const { error } = await sb.from('reservations').update({ status: 'anulata' }).eq('id', b.dataset.id);
     if (error) return toast(errMsg(error));
     toast('Rezervare anulată.'); render();
