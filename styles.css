@@ -361,3 +361,14 @@ table.veh{min-width:900px}
 .msg .att{align-items:flex-start}
 .attn{display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:13px;margin-right:8px;white-space:nowrap}.attn .ico{width:15px;height:15px}
 .pkc{white-space:nowrap;line-height:1.3}.pkc+.pkc{margin-top:4px}.pkc .small{display:block;white-space:normal;max-width:180px}
+/* Utilizatori: tabelul încape pe ecran (butoanele unul sub altul, coloane mai înguste) */
+table.users{min-width:0}
+table.users td:last-child .row{flex-direction:column;align-items:stretch;gap:4px}
+table.users td:last-child .btn{width:100%;white-space:nowrap}
+table.users .ucell{min-width:150px;max-width:220px}
+table.users .rolesel,table.users .accsel{max-width:125px}
+table.users .pkc .small{max-width:130px}
+table.users th,table.users td{padding-left:6px;padding-right:6px}
+table.users td:last-child .btn{font-size:13px;padding:4px 8px}
+table.users .mplates{grid-template-columns:max-content}
+table.users .ucell{max-width:190px}
