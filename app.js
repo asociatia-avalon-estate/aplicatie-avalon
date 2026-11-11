@@ -1007,7 +1007,7 @@ async function pageUsers() {
     && (!q || norm([p.first_name, p.last_name, p.email, p.phone, ...(p.unit_members || []).map(m => m.unit_code), ...p.cars].join(' ')).includes(q)))
     .sort((x, y) => (activeUnits(x)[0]?.unit_code || '~').localeCompare(activeUnits(y)[0]?.unit_code || '~', 'ro', { numeric: true }) || (x.last_name || '').localeCompare(y.last_name || ''));
   const pend = all.filter(p => p.status === 'in_asteptare'), toInvite = all.filter(p => p.status === 'neinvitat' || p.status === 'invitat');
-  const shown = list.slice(0, 300);
+  const shown = list;
   const rows = shown.map(p => { const um = activeUnits(p), m0 = um[0] || (p.unit_members || [])[0];
     return `<tr><td class="ucell"><b>${esc(fullName(p))}</b><span class="muted small">${esc(p.email)}</span>${p.phone ? `<span class="muted small">${esc(p.phone)}</span>` : ''}</td>
     <td>${(um.length ? um : (p.unit_members || [])).map(m => esc(m.unit_code)).join('<br>') || '<span class="muted">—</span>'}${p.until_date ? `<div class="muted small">până la ${fmtDate(p.until_date)}</div>` : ''}</td>
@@ -1031,7 +1031,7 @@ async function pageUsers() {
     <label class="f">Bloc<select id="u-block">${['Toate', ...blocks].map(x => opt(x, b, x)).join('')}</select></label>
     <label class="f">Acces<select id="u-acc">${opt('toate', ac, 'Toate')}${Object.entries(ACCESS).map(([k, v]) => opt(k, ac, v[0])).join('')}</select></label>
     <label class="f">Status<select id="u-stat">${opt('toate', st, 'Toate')}${Object.entries(USTAT).map(([k, v]) => opt(k, st, v[0])).join('')}</select></label></div>
-   <p class="muted small">${list.length} utilizatori${list.length > 300 ? ' (se afișează primii 300 – folosește căutarea sau filtrele)' : ''}</p>
+   <p class="muted small">${list.length} utilizatori</p>
    <div class="tablewrap"><table class="rep users"><thead><tr><th>Nume și contact</th><th>Apartament</th><th>Mașini</th><th>Relația cu apartamentul</th><th>Acces în aplicație</th><th>Status</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">Niciun utilizator găsit.</td></tr>'}</tbody></table></div></div>`;
 }
 async function pageMembers() {
