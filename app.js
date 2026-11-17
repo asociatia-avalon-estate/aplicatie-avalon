@@ -1485,6 +1485,7 @@ document.addEventListener('keydown', e => { const t = e.target.closest?.('[data-
 
 /* ---------- pornire ---------- */
 startI18n();
+window.__avalon = { sb, S, isEN }; // pentru asistent.js (asistentul fără AI)
 if (/^#(prima-intrare|bun-venit)/.test(location.hash)) { S.loginStep = 'invite'; history.replaceState(null, '', location.pathname); }
 parseHash();
 let started = false;
