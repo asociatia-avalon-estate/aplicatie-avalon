@@ -376,3 +376,25 @@ table.users .ucell{max-width:190px}
 .udot{flex:none;width:10px;height:10px;border-radius:50%;background:#1a73e8;display:inline-block}
 .item.unread .title{font-weight:700;color:var(--ink,#111)}
 .item.unread{background:linear-gradient(90deg,rgba(26,115,232,.06),transparent 60%)}
+/* Asistent (fără AI): buton „Ajutor” + fereastră de întrebări */
+#as-btn{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:6px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:10px 16px 10px 12px;font:inherit;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
+#as-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#as-panel{position:fixed;right:18px;bottom:76px;z-index:61;width:min(380px,calc(100vw - 32px));height:min(540px,calc(100vh - 120px));display:flex;flex-direction:column;background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 34px rgba(0,0,0,.25);overflow:hidden}
+#as-panel[hidden]{display:none}
+.as-head{display:flex;align-items:baseline;gap:8px;padding:10px 12px;background:var(--accent);color:var(--accent-ink)}
+.as-head b{font-size:20px}.as-head .small{opacity:.85;flex:1}
+.as-x{background:none;border:0;color:inherit;font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
+.as-log{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.as-msg{padding:8px 10px;border-radius:10px;max-width:92%;line-height:1.35}
+.as-msg p{margin:4px 0 0}
+.as-msg.bot{background:var(--card,#fff);border:1px solid var(--line);align-self:flex-start}
+.as-msg.me{background:var(--accent-soft);align-self:flex-end}
+.as-gos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.as-go{font-weight:700;color:var(--accent);text-decoration:none}
+.as-chips{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+.as-chip,.as-doc{text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-size:15px;cursor:pointer;color:inherit;display:block;text-decoration:none;margin-top:5px}
+.as-chip:hover,.as-doc:hover{border-color:var(--accent)}
+.as-form{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);background:var(--card,#fff)}
+.as-form input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.as-form button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:0 12px;font:inherit;cursor:pointer}
+@media (max-width:760px){#as-btn{bottom:78px;right:12px;padding:9px;font-size:0;gap:0}#as-btn span{display:none}#as-panel{right:8px;left:8px;width:auto;bottom:130px;height:calc(100vh - 150px)}}
