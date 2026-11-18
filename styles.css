@@ -398,3 +398,9 @@ table.users .ucell{max-width:190px}
 .as-form input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
 .as-form button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:0 12px;font:inherit;cursor:pointer}
 @media (max-width:760px){#as-btn{bottom:78px;right:12px;padding:9px;font-size:0;gap:0}#as-btn span{display:none}#as-panel{right:8px;left:8px;width:auto;bottom:130px;height:calc(100vh - 150px)}}
+/* Căutare unități (Adaugă utilizator / Unități): apartament, loc de parcare, boxă – fiecare cu „cipuri” */
+.upick input{width:100%}
+.uchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.uchips:empty{display:none}
+.uchip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:2px 4px 2px 10px;font-size:15px}
+.uchip button{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--accent);padding:0 4px}
