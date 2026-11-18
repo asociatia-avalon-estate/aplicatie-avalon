@@ -581,11 +581,15 @@ async function unitCtx() {
     fetchAll(() => sb.from('unit_members').select('unit_code, relation, until, person_id, people(first_name, last_name, status)').order('unit_code')),
     fetchAll(() => sb.from('parking_accounts').select('id, location, spaces, metrici_name, spots, person_id, people(first_name, last_name)').order('metrici_name'))]);
   const occ = {}; mem.filter(m => (!m.until || new Date(m.until) >= dayStart(new Date())) && m.people?.status !== 'fost').forEach(m => (occ[m.unit_code] ||= []).push(`${REL[m.relation] || ''}: ${fullName(m.people)}`));
-  return { units, occ, acc };
+  // locurile din conturile Metrici încă nelegate de o persoană (ex. conturile goale create pentru fiecare loc)
+  const pkAcc = {}; acc.filter(a => !a.person_id).forEach(a => [...(a.spots || []), a.metrici_name].forEach(sp => { const k = pkKey(sp); if (k && !pkAcc[k]) pkAcc[k] = a.metrici_name; }));
+  return { units, occ, acc, pkAcc };
 }
+const unitLbl = (ctx, u) => ctx.occ[u.code] ? ctx.occ[u.code].join('; ') : u.kind !== 'parcare' ? 'fără titular în aplicație'
+  : ctx.pkAcc[pkKey(u.code)] ? `cont Metrici nelegat (${ctx.pkAcc[pkKey(u.code)]})` : 'fără titular în aplicație';
 function unitPickers(pre, ctx) {
   return Object.entries(UGROUP).map(([g, G]) => `<div class="f full upick" data-g="${g}"><span>${G.l}</span><input id="${pre}-${g}" list="${pre}-${g}-l" placeholder="${G.ph}" autocomplete="off">
-    <datalist id="${pre}-${g}-l">${ctx.units.filter(u => G.kinds.includes(u.kind)).map(u => `<option value="${esc(u.code)}">${ctx.occ[u.code] ? esc(ctx.occ[u.code].join('; ')) : 'liber'}</option>`).join('')}</datalist>
+    <datalist id="${pre}-${g}-l">${ctx.units.filter(u => G.kinds.includes(u.kind)).map(u => `<option value="${esc(u.code)}">${esc(unitLbl(ctx, u))}</option>`).join('')}</datalist>
     <div class="uchips" id="${pre}-${g}-c"></div>${g === 'pk' ? `<div class="stack" id="${pre}-pkacc" style="gap:4px"></div>` : ''}</div>`).join('');
 }
 // alegerea din listă → „cip”; la locuri de parcare arătăm contul Metrici care conține locul (cu bifă de legare)
