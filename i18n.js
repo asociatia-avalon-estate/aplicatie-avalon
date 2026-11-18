@@ -182,6 +182,7 @@ const EN = {
 "Editează": "Edit",
 "Editează contactul": "Edit contact",
 "Email": "Email",
+"Nu există un utilizator cu acest email.": "There is no user with this email.",
 "Email sau parolă greșită. Dacă intri prima dată sau ai uitat parola, apasă „Prima dată aici / Am uitat parola”.": "Wrong email or password. If it's your first time or you forgot your password, tap “First time here / Forgot password”.",
 "Eveniment": "Event",
 "Excel salvat.": "Excel saved.",
