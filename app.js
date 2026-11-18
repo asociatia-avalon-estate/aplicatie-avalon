@@ -200,7 +200,8 @@ async function loadMe() {
   S.me = data;
   if (!data) return;
   const { data: um } = await sb.from('unit_members').select('unit_code, relation, units(code, building, kind)').eq('person_id', data.id);
-  S.units = (um || []).map(x => ({ code: x.unit_code, relation: x.relation, building: x.units?.building, kind: x.units?.kind }));
+  const mine = (um || []).map(x => ({ code: x.unit_code, relation: x.relation, building: x.units?.building, kind: x.units?.kind }));
+  S.units = mine.filter(u => !['parcare', 'boxa', 'bicicleta'].includes(u.kind) && !isAnexa(u.code)); S.anexe = mine.filter(u => !S.units.includes(u));
 }
 
 /* ---------- schelet ---------- */
@@ -562,7 +563,56 @@ const resCost = r => costParcare(resHours(r).h);
 const overMin = r => r.exited_at && new Date(r.exited_at) > new Date(r.ends_at) ? Math.round((new Date(r.exited_at) - new Date(r.ends_at)) / 60000) : (r.visitor_inside && new Date() > new Date(r.ends_at) ? Math.round((new Date() - new Date(r.ends_at)) / 60000) : 0);
 const SRC = { app: 'Locatarul', link: 'Vizitatorul (link)', admin: 'Administrația', import: 'Import' };
 const OPEN_ST = ['nou', 'in_lucru', 'in_asteptare'];
-async function unitsList() { if (!S.cache.unitsAll) { const { data } = await sb.from('units').select('code, building, kind').order('code').limit(2000); S.cache.unitsAll = data || []; } return S.cache.unitsAll; }
+async function unitsList() {
+  if (!S.cache.unitsAll) { const all = []; for (let f = 0; ; f += 1000) { const { data, error } = await sb.from('units').select('code, building, kind').order('code').range(f, f + 999); if (error) throw error; all.push(...(data || [])); if ((data || []).length < 1000) break; } S.cache.unitsAll = all; }
+  return S.cache.unitsAll;
+}
+// locuri de parcare, boxe, locuri de bicicletă = unități „anexe” (nu apar la rezervări, tichete, link de vizitatori)
+const isAnexa = code => /^(T\d\.P\d+|P\d+|U[13][ab]_|KLAUS |A2b_\d{3}|SD\.)/i.test(code || '');
+const UGROUP = { ap: { l: 'Apartament / casă / spațiu', ph: 'caută: A1b.3.5, T3.B7, H12', kinds: ['apartament', 'townhouse', 'vila', 'comercial', 'alta'] },
+  pk: { l: 'Loc de parcare', ph: 'caută: U1a_063, T3.P6, P51, U3a_010', kinds: ['parcare'] },
+  bx: { l: 'Boxă / loc de bicicletă', ph: 'caută: U1a_SD_01, U3a_B001', kinds: ['boxa', 'bicicleta'] } };
+const pkKey = c => { const k = String(c || '').toUpperCase().replace(/^KLAUS\s+/, '').replace(/[^A-Z0-9-]/g, ''); const m = k.match(/^(U1[AB]\d{3})[UDI]$/); return m ? m[1] : k; };
+async function fetchAll(make) { const all = []; for (let f = 0; ; f += 1000) { const { data, error } = await make().range(f, f + 999); if (error) throw error; all.push(...(data || [])); if ((data || []).length < 1000) break; } return all; }
+// datele pentru căutarea unităților: unitățile, cine le ocupă acum, conturile Metrici (cu locurile din nume)
+async function unitCtx() {
+  const [units, mem, acc] = await Promise.all([unitsList(),
+    fetchAll(() => sb.from('unit_members').select('unit_code, relation, until, person_id, people(first_name, last_name, status)').order('unit_code')),
+    fetchAll(() => sb.from('parking_accounts').select('id, location, spaces, metrici_name, spots, person_id, people(first_name, last_name)').order('metrici_name'))]);
+  const occ = {}; mem.filter(m => (!m.until || new Date(m.until) >= dayStart(new Date())) && m.people?.status !== 'fost').forEach(m => (occ[m.unit_code] ||= []).push(`${REL[m.relation] || ''}: ${fullName(m.people)}`));
+  return { units, occ, acc };
+}
+function unitPickers(pre, ctx) {
+  return Object.entries(UGROUP).map(([g, G]) => `<div class="f full upick" data-g="${g}"><span>${G.l}</span><input id="${pre}-${g}" list="${pre}-${g}-l" placeholder="${G.ph}" autocomplete="off">
+    <datalist id="${pre}-${g}-l">${ctx.units.filter(u => G.kinds.includes(u.kind)).map(u => `<option value="${esc(u.code)}">${ctx.occ[u.code] ? esc(ctx.occ[u.code].join('; ')) : 'liber'}</option>`).join('')}</datalist>
+    <div class="uchips" id="${pre}-${g}-c"></div>${g === 'pk' ? `<div class="stack" id="${pre}-pkacc" style="gap:4px"></div>` : ''}</div>`).join('');
+}
+// alegerea din listă → „cip”; la locuri de parcare arătăm contul Metrici care conține locul (cu bifă de legare)
+function wireUnitPickers(w, pre, ctx, personId = null) {
+  const sel = { ap: [], pk: [], bx: [] };
+  const drawAcc = () => {
+    const box = w.querySelector(`#${pre}-pkacc`); if (!box) return;
+    const keys = new Set(sel.pk.map(pkKey)), seen = new Set();
+    const hits = ctx.acc.filter(a => (a.spots || []).some(s => keys.has(pkKey(s))) || keys.has(pkKey(a.metrici_name)));
+    box.innerHTML = hits.filter(a => !seen.has(a.id) && seen.add(a.id)).map(a => {
+      const lbl = `${esc(a.metrici_name)} <span class="muted small">· ${esc(PKLOC[a.location] || a.location || '')} · ${a.spaces ?? '?'} ${a.spaces === 1 ? 'loc' : 'locuri'}</span>`;
+      if (!a.person_id) return `<label class="sw small"><span>Leagă contul Metrici ${lbl}</span><input type="checkbox" class="pkacc" value="${a.id}" checked></label>`;
+      if (a.person_id === personId) return `<span class="small">Contul Metrici ${lbl} e deja legat de această persoană.</span>`;
+      return `<span class="small muted">Contul Metrici ${lbl} e legat de ${esc(fullName(a.people))}.</span>`;
+    }).join('') || (sel.pk.length ? '<span class="small muted">Nu am găsit în Metrici un cont cu acest loc în nume.</span>' : '');
+  };
+  const draw = g => { w.querySelector(`#${pre}-${g}-c`).innerHTML = sel[g].map(c => `<span class="uchip" data-notr>${esc(c)}<button type="button" data-rm="${esc(c)}" data-g="${g}" aria-label="Scoate ${esc(c)}">×</button></span>`).join(''); if (g === 'pk') drawAcc(); };
+  Object.entries(UGROUP).forEach(([g, G]) => {
+    const inp = w.querySelector(`#${pre}-${g}`), ok = ctx.units.filter(u => G.kinds.includes(u.kind)).map(u => u.code);
+    const take = force => { const v = inp.value.trim(); if (!v) return; let c = ok.find(x => x.toLowerCase() === v.toLowerCase());
+      if (!c && force) { const m = ok.filter(x => x.toLowerCase().includes(v.toLowerCase())); if (m.length === 1) c = m[0]; }
+      if (c) { if (!sel[g].includes(c)) sel[g].push(c); inp.value = ''; draw(g); } };
+    inp.addEventListener('change', () => take(false)); inp.addEventListener('input', () => take(false));
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); take(true); } });
+  });
+  w.addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; sel[b.dataset.g] = sel[b.dataset.g].filter(x => x !== b.dataset.rm); draw(b.dataset.g); });
+  return { codes: () => [...sel.ap, ...sel.pk, ...sel.bx], accounts: () => [...w.querySelectorAll('.pkacc:checked')].map(x => x.value), pending: () => Object.keys(UGROUP).some(g => w.querySelector(`#${pre}-${g}`).value.trim()) };
+}
 
 /* anunțuri – ajutoare */
 const ANN_CATS = { Informare: 'line', Eveniment: 'gold', Mentenanță: 'warn', Urgent: 'bad', Lucrări: 'warn' };
@@ -1010,7 +1060,7 @@ async function loadPeople(force) {
 }
 async function audit(personId, field, from, to) { await sb.from('audit_log').insert({ person_id: personId, field, old_value: from ?? null, new_value: to ?? null, actor_id: S.me.id, actor_label: fullName(S.me), at: new Date().toISOString() }); }
 // conturile de parcare din Metrici ale unei persoane: unde, câte locuri, numele locurilor
-const PKLOC = { 'Avalon-Exterior': 'Afară', 'Avalon-Interior': 'Subteran' };
+const PKLOC = { 'Avalon-Exterior': 'Afară', 'Avalon-Interior': 'Subteran', 'Avalon-Interior (faza 2)': 'Subsol faza 2' };
 const pkCell = acc => (acc || []).length ? (acc || []).slice().sort((a, b) => (a.location || '').localeCompare(b.location || '')).map(a => `<div class="pkc"><b>${esc(PKLOC[a.location] || a.location || '')}</b> · ${a.spaces ?? '?'} ${a.spaces === 1 ? 'loc' : 'locuri'}${(a.spots || []).length ? `<span class="muted small" data-notr>${esc(a.spots.join(', '))}</span>` : ''}</div>`).join('') : '<span class="muted small">—</span>';
 const pkOpt = a => `${a.metrici_name}${a.spots?.length ? '' : ''} · ${a.spaces ?? '?'} ${a.spaces === 1 ? 'loc' : 'locuri'}`;
 async function pageUsers() {
@@ -1022,15 +1072,15 @@ async function pageUsers() {
     .sort((x, y) => (activeUnits(x)[0]?.unit_code || '~').localeCompare(activeUnits(y)[0]?.unit_code || '~', 'ro', { numeric: true }) || (x.last_name || '').localeCompare(y.last_name || ''));
   const pend = all.filter(p => p.status === 'in_asteptare'), toInvite = all.filter(p => p.status === 'neinvitat' || p.status === 'invitat');
   const shown = list;
-  const rows = shown.map(p => { const um = activeUnits(p), m0 = um[0] || (p.unit_members || [])[0];
+  const rows = shown.map(p => { const um = activeUnits(p), res = um.filter(m => !isAnexa(m.unit_code)), anx = um.filter(m => isAnexa(m.unit_code)), m0 = res[0] || um[0] || (p.unit_members || [])[0];
     return `<tr><td class="ucell"><b>${esc(fullName(p))}</b><span class="muted small">${esc(p.email)}</span>${p.phone ? `<span class="muted small">${esc(p.phone)}</span>` : ''}</td>
-    <td>${(um.length ? um : (p.unit_members || [])).map(m => esc(m.unit_code)).join('<br>') || '<span class="muted">—</span>'}${p.until_date ? `<div class="muted small">până la ${fmtDate(p.until_date)}</div>` : ''}</td>
+    <td>${(um.length ? res : (p.unit_members || [])).map(m => esc(m.unit_code)).join('<br>') || (anx.length ? '' : '<span class="muted">—</span>')}${anx.length ? `<div class="muted small" data-notr>${anx.map(m => esc(m.unit_code)).join(', ')}</div>` : ''}${p.until_date ? `<div class="muted small">până la ${fmtDate(p.until_date)}</div>` : ''}</td>
     <td>${p.status === 'fost' ? '<span class="muted small">—</span>' : miniPlates(p.cars)}</td>
     <td>${pkCell(p.parking_accounts)}</td>
     <td>${m0 ? `<select class="rolesel" data-mid="${m0.id}" data-pid="${p.id}" aria-label="Relația cu unitatea pentru ${esc(fullName(p))}">${Object.entries(REL).map(([k, l]) => `<option value="${k}" ${m0.relation === k ? 'selected' : ''}>${l === '–' ? 'Fără apartament' : l}</option>`).join('')}</select>` : '<span class="muted small">Fără apartament</span>'}</td>
     <td><select class="accsel acc-${p.access}" data-pid="${p.id}" aria-label="Acces în aplicație pentru ${esc(fullName(p))}">${Object.entries(ACCESS).map(([k, v]) => `<option value="${k}" ${p.access === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></td>
     <td>${uStatus(p)}${p.status === 'invitat' && p.invited_at ? `<div class="muted small">invitat ${fmtDate(p.invited_at)}</div>` : ''}</td>
-    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn quiet sm" data-act="au-open" data-id="${p.id}">Istoric</button>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn quiet sm" data-act="u-units" data-id="${p.id}">Unități</button><button class="btn quiet sm" data-act="au-open" data-id="${p.id}">Istoric</button>
      ${p.status === 'in_asteptare' ? `<button class="btn sm" data-act="u-approve" data-id="${p.id}">Aprobă</button><button class="btn quiet sm" data-act="u-reject" data-id="${p.id}">Respinge</button>`
       : p.status === 'neinvitat' || p.status === 'invitat' ? `<button class="btn sm inv" data-act="u-invite" data-id="${p.id}">${p.invited_at ? 'Retrimite invitația' : 'Trimite invitația'}</button>`
       : p.status === 'dezactivat' || p.status === 'fost' ? `<button class="btn sm grey" data-act="u-activate" data-id="${p.id}">Reactivează</button>`
@@ -1093,31 +1143,59 @@ function inviteModal() {
   }));
 }
 async function addUserModal() {
-  const [units, { data: freeAcc }] = await Promise.all([unitsList(), sb.from('parking_accounts').select('id, location, spaces, metrici_name, spots').is('person_id', null).order('metrici_name')]);
-  const accSel = (id, loc, label) => { const l = (freeAcc || []).filter(a => a.location === loc); return `<label class="f">${label}<select id="${id}"><option value="">Fără cont de parcare</option>${l.map(a => `<option value="${a.id}">${esc(pkOpt(a))}</option>`).join('')}</select></label>`; };
+  const ctx = await unitCtx(), free = ctx.acc.filter(a => !a.person_id);
   openModal(`<form class="modal pkmodal" id="ua-form" role="dialog" aria-modal="true" aria-labelledby="ua-h"><div class="row between"><h2 id="ua-h">Utilizator nou</h2><button type="button" class="btn quiet sm" data-act="m-close" aria-label="Închide">${ic('x')}</button></div>
    <div class="form-grid"><label class="f">Prenume<input id="ua-first" required></label><label class="f">Nume<input id="ua-last" required></label>
    <label class="f">E-mail<input id="ua-email" type="email" required></label><label class="f">Telefon<input id="ua-phone" type="tel"></label>
-   <label class="f">Apartament / unitate<input id="ua-unit" list="ua-units" placeholder="ex. A1a.1.1 (gol pentru personal / pază)"><datalist id="ua-units">${units.map(u => `<option value="${esc(u.code)}">`).join('')}</datalist></label>
-   <label class="f">Relația cu apartamentul<select id="ua-rel">${Object.entries(REL).filter(([k]) => k !== 'fara_apartament').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+   ${unitPickers('ua', ctx)}
+   <label class="f">Relația cu unitățile alese<select id="ua-rel">${Object.entries(REL).filter(([k]) => k !== 'fara_apartament').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
    <label class="f">Acces în aplicație<select id="ua-acc">${Object.entries(ACCESS).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label>
-   ${accSel('ua-pk-ext', 'Avalon-Exterior', 'Parcarea de afară (cont Metrici)')}${accSel('ua-pk-int', 'Avalon-Interior', 'Parcarea subterană (cont Metrici)')}
-   <p class="muted small full" style="margin:0">Locurile și numărul lor vin din contul de parcare din Metrici. În listă apar doar conturile care nu sunt încă legate de cineva.</p>
+   <label class="f full">Alt cont Metrici (dacă nu a apărut mai sus)<select id="ua-pk"><option value="">—</option>${free.map(a => `<option value="${a.id}">${esc(pkOpt(a))}</option>`).join('')}</select></label>
+   <p class="muted small full" style="margin:0">Scrie câteva caractere și alege din listă; poți alege mai multe. Lângă fiecare cod scrie cine îl ocupă acum. Fără apartament: personal / pază.</p>
    <label class="sw" for="ua-inv"><span>Trimite invitația acum</span><input type="checkbox" id="ua-inv" checked></label></div>
    <p class="err" id="ua-err"></p>
-   <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">Adaugă</button></div></form>`, w => w.querySelector('#ua-form').addEventListener('submit', async ev => {
-    ev.preventDefault(); const v = id => document.getElementById(id).value.trim(), err = document.getElementById('ua-err'), unit = v('ua-unit');
-    if (unit && !units.some(u => u.code === unit)) { err.textContent = 'Unitatea nu există. Alege din listă.'; return; }
-    const { data: p, error } = await sb.from('people').insert({ first_name: v('ua-first'), last_name: v('ua-last'), email: v('ua-email').toLowerCase(), phone: v('ua-phone') || null, access: v('ua-acc'), status: 'neinvitat' }).select('*').single();
-    if (error) { err.textContent = /duplicate|unique/i.test(error.message) ? 'Există deja o persoană cu acest email.' : errMsg(error); return; }
-    if (unit) { const { error: e2 } = await sb.from('unit_members').insert({ unit_code: unit, person_id: p.id, relation: v('ua-rel'), since: dateInput(new Date()) }); if (e2) { err.textContent = errMsg(e2); return; } }
-    const pk = [v('ua-pk-ext'), v('ua-pk-int')].filter(Boolean);
-    if (pk.length) { const { error: e4 } = await sb.from('parking_accounts').update({ person_id: p.id }).in('id', pk).is('person_id', null); if (e4) { err.textContent = errMsg(e4); return; }
-      await audit(p.id, 'Cont de parcare', null, (freeAcc || []).filter(a => pk.includes(a.id)).map(pkOpt).join('; ')); }
-    await audit(p.id, 'Cont nou', null, unit ? `${REL[v('ua-rel')]} ${unit}` : 'fără apartament');
-    if (document.getElementById('ua-inv').checked) { try { await invitePerson(p); } catch (e3) { toast('Adăugat, dar invitația nu a plecat: ' + errMsg(e3)); } }
-    closeModal(); S.cache.people = null; toast('Utilizator adăugat.'); render();
-  }));
+   <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">Adaugă</button></div></form>`, w => {
+    const pk = wireUnitPickers(w, 'ua', ctx);
+    w.querySelector('#ua-form').addEventListener('submit', async ev => {
+      ev.preventDefault(); const v = id => document.getElementById(id).value.trim(), err = document.getElementById('ua-err');
+      if (pk.pending()) { err.textContent = 'Ai scris un cod care nu e ales din listă. Alege-l din listă sau șterge-l.'; return; }
+      const codes = pk.codes(), rel = v('ua-rel'), accs = [...new Set([...pk.accounts(), v('ua-pk')].filter(Boolean))];
+      const { data: p, error } = await sb.from('people').insert({ first_name: v('ua-first'), last_name: v('ua-last'), email: v('ua-email').toLowerCase(), phone: v('ua-phone') || null, access: v('ua-acc'), status: 'neinvitat' }).select('*').single();
+      if (error) { err.textContent = /duplicate|unique/i.test(error.message) ? 'Există deja o persoană cu acest email.' : errMsg(error); return; }
+      if (codes.length) { const { error: e2 } = await sb.from('unit_members').insert(codes.map(c => ({ unit_code: c, person_id: p.id, relation: rel, since: dateInput(new Date()) }))); if (e2) { err.textContent = errMsg(e2); return; } }
+      if (accs.length) { const { error: e4 } = await sb.from('parking_accounts').update({ person_id: p.id }).in('id', accs).is('person_id', null); if (e4) { err.textContent = errMsg(e4); return; }
+        await audit(p.id, 'Cont de parcare', null, ctx.acc.filter(a => accs.includes(a.id)).map(pkOpt).join('; ')); }
+      await audit(p.id, 'Cont nou', null, codes.length ? `${REL[rel]} ${codes.join(', ')}` : 'fără apartament');
+      if (document.getElementById('ua-inv').checked) { try { await invitePerson(p); } catch (e3) { toast('Adăugat, dar invitația nu a plecat: ' + errMsg(e3)); } }
+      closeModal(); S.cache.people = null; toast('Utilizator adăugat.'); render();
+    });
+  });
+}
+// unitățile unui utilizator existent: ce are acum (apartamente, parcări, boxe, conturi Metrici) + adăugare / scoatere
+async function unitsModal(id) {
+  const p = (S.cache.people || []).find(x => x.id === id); if (!p) return;
+  const ctx = await unitCtx(), cur = activeUnits(p), myAcc = ctx.acc.filter(a => a.person_id === id), yday = dateInput(new Date(Date.now() - 86400000));
+  openModal(`<form class="modal pkmodal" id="un-form" role="dialog" aria-modal="true" aria-labelledby="un-h"><div class="row between"><h2 id="un-h">Unități · ${esc(fullName(p))}</h2><button type="button" class="btn quiet sm" data-act="m-close" aria-label="Închide">${ic('x')}</button></div>
+   <div class="stack" style="gap:6px"><b>Are acum</b>${cur.length ? cur.map(m => `<label class="sw small"><span><b data-notr>${esc(m.unit_code)}</b> · ${esc(REL[m.relation] || '')}</span><span class="row" style="gap:4px"><span class="muted small">scoate</span><input type="checkbox" class="un-rm" value="${m.id}" data-c="${esc(m.unit_code)}"></span></label>`).join('') : '<span class="muted small">Nicio unitate.</span>'}
+    ${myAcc.map(a => `<label class="sw small"><span>Cont Metrici <b>${esc(a.metrici_name)}</b> · ${esc(PKLOC[a.location] || a.location || '')}</span><span class="row" style="gap:4px"><span class="muted small">dezleagă</span><input type="checkbox" class="un-unacc" value="${a.id}" data-c="${esc(a.metrici_name)}"></span></label>`).join('')}</div>
+   <div class="stack" style="gap:6px;margin-top:8px"><b>Adaugă</b><div class="form-grid">${unitPickers('un', ctx)}
+    <label class="f">Relația cu unitățile noi<select id="un-rel">${Object.entries(REL).filter(([k]) => k !== 'fara_apartament').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div></div>
+   <p class="muted small" style="margin:0">Ce scoți rămâne în istoric (cu data de azi). Mașinile din contul Metrici dezlegat nu mai apar la această persoană.</p>
+   <p class="err" id="un-err"></p>
+   <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">Salvează</button></div></form>`, w => {
+    const pk = wireUnitPickers(w, 'un', ctx, id);
+    w.querySelector('#un-form').addEventListener('submit', async ev => {
+      ev.preventDefault(); const err = document.getElementById('un-err'), rel = document.getElementById('un-rel').value;
+      if (pk.pending()) { err.textContent = 'Ai scris un cod care nu e ales din listă. Alege-l din listă sau șterge-l.'; return; }
+      const add = pk.codes().filter(c => !cur.some(m => m.unit_code === c)), rm = [...w.querySelectorAll('.un-rm:checked')], un = [...w.querySelectorAll('.un-unacc:checked')], accs = pk.accounts();
+      if (!add.length && !rm.length && !un.length && !accs.length) { closeModal(); return; }
+      if (rm.length) { const { error } = await sb.from('unit_members').update({ until: yday }).in('id', rm.map(x => x.value)); if (error) { err.textContent = errMsg(error); return; } await audit(id, 'Unități scoase', rm.map(x => x.dataset.c).join(', '), null); }
+      if (add.length) { const { error } = await sb.from('unit_members').insert(add.map(c => ({ unit_code: c, person_id: id, relation: rel, since: dateInput(new Date()) }))); if (error) { err.textContent = errMsg(error); return; } await audit(id, 'Unități adăugate', null, `${REL[rel]} ${add.join(', ')}`); }
+      if (un.length) { const { error } = await sb.from('parking_accounts').update({ person_id: null }).in('id', un.map(x => x.value)).eq('person_id', id); if (error) { err.textContent = errMsg(error); return; } await audit(id, 'Cont de parcare dezlegat', un.map(x => x.dataset.c).join('; '), null); }
+      if (accs.length) { const { error } = await sb.from('parking_accounts').update({ person_id: id }).in('id', accs).is('person_id', null); if (error) { err.textContent = errMsg(error); return; } await audit(id, 'Cont de parcare', null, ctx.acc.filter(a => accs.includes(a.id)).map(pkOpt).join('; ')); }
+      closeModal(); S.cache.people = null; toast('Unități salvate.'); render();
+    });
+  });
 }
 async function auditModal(id) {
   const p = (S.cache.people || []).find(x => x.id === id);
@@ -1331,6 +1409,7 @@ async function pagesClick(a, b) {
     case 'inv-open': inviteModal(); return true;
     case 'sale-open': saleModal(); return true;
     case 'au-open': auditModal(pid); return true;
+    case 'u-units': unitsModal(pid); return true;
     case 'u-deact': deactModal(pid); return true;
     case 'u-invite': { const p = P(); b.disabled = true; try { await invitePerson(p); toast('Invitația a plecat la ' + p.email + '.'); render(); } catch (e) { b.disabled = false; toast(errMsg(e)); } } return true;
     case 'u-deactivate': case 'u-activate': case 'u-approve': case 'u-reject': {
