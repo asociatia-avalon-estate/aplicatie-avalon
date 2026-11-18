@@ -39,6 +39,7 @@ function errMsg(e) {
   if (/interval_valid/.test(m)) return 'Ora de sfârșit trebuie să fie după ora de început.';
   if (/Token has expired|invalid/i.test(m) && (S.loginStep === 'code' || S.loginStep === 'invite')) return 'Codul nu e corect sau a expirat. Cere un cod nou.';
   if (/Invalid login credentials/i.test(m)) return 'Email sau parolă greșită. Dacă intri prima dată sau ai uitat parola, apasă „Prima dată aici / Am uitat parola”.';
+  if (/Database error saving new user|utilizator_inexistent|Signups not allowed/i.test(m)) return 'Nu există un utilizator cu acest email.';
   if (/Email not confirmed/i.test(m)) return 'Contul nu e încă activat. Apasă „Prima dată aici” și intră cu codul primit pe email.';
   if (/rate limit|security purposes/i.test(m)) return 'Ai cerut prea multe coduri într-un timp scurt. Încearcă din nou peste un minut.';
   return m;
