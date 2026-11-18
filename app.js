@@ -84,9 +84,10 @@ const REL = { proprietar: 'Proprietar', chirias: 'Chiriaș', membru_familie: 'Me
 /* ---------- navigare ---------- */
 function menu() {
   if (S.me?.access === 'paza') return [['paza', 'Vizitatori azi', 'gate'], ['contacte', 'Contacte', 'contacts'], ['profil', 'Contul meu', 'user']];
-  const m = [['acasa', 'Acasă', 'home'], ['anunturi', 'Anunțuri', 'mega'], ['tichete', 'Tichete', 'ticket'], ['utilizatori', 'Utilizatori', 'users']];
+  const m = [['acasa', 'Acasă', 'home'], ['anunturi', 'Anunțuri', 'mega'], ['tichete', 'Tichete', 'ticket'], ...(isAdmin() ? [['utilizatori', 'Utilizatori', 'users']] : [])];
   if (isAdmin()) m.push(['raport', 'Raport parcări', 'chart'], ['rezervari', 'Rezervări parcare', 'history'], ['paza', 'Pază', 'gate']);
   if (!isAdmin() || S.units.length) m.push(['parcare', 'Parcare vizitatori', 'parking'], ['istoric', 'Rezervările mele', 'history'], ['vehicule', 'Vehiculele mele', 'car']);
+  if (S.units.length || S.anexe?.length) m.push(['unitati', 'Unitățile mele', 'users']);
   m.push(['documente', 'Documente', 'doc'], ['contacte', 'Contacte', 'contacts'], ['profil', 'Contul meu', 'user']);
   return m;
 }
@@ -697,6 +698,7 @@ async function pageHomeAdmin() {
     latestAnnHTML().catch(() => '')
   ]);
   await tarif();
+  { const { count } = await sb.from('member_requests').select('id', { count: 'exact', head: true }).eq('status', 'in_asteptare'); pend.count = (pend.count || 0) + (count || 0); }
   const td = today.data || [], inNow = td.filter(r => r.visitor_inside || (!r.metrici_action_id && !r.entered_at && new Date(r.starts_at) <= now && new Date(r.ends_at) > now) || (r.entered_at && !r.exited_at)), later = td.filter(r => new Date(r.starts_at) > now);
   const prevSum = (prevR.data || []).reduce((a, r) => a + resCost(r), 0), cr = curR.data || [], mh = cr.reduce((a, r) => a + resHours(r).h, 0);
   const sy = sync.data, ago = sy?.last_ok ? Math.round((now - new Date(sy.last_ok)) / 1000) : null;
@@ -709,7 +711,7 @@ async function pageHomeAdmin() {
    <div class="card stat"><span class="muted small">Vizitatori în parcare acum</span><span class="n">${inNow.length}<span class="muted" style="font-size:24px"> / ${SPOTS_N}</span></span></div>
    <div class="card stat"><span class="muted small">De facturat pe ${LUNI[p0.getMonth()]}</span><span class="n" style="font-size:34px">${lei(prevSum)}</span></div>
   </div>
-  ${pend.count ? `<a class="card ann-banner" href="#utilizatori">${ic('users')}<span class="grow"><b>${pend.count} ${pend.count === 1 ? 'cerere nouă' : 'cereri noi'} de acces</b><br><span class="muted small">Locatari care au adăugat membri în apartament și așteaptă aprobarea</span></span><span class="muted small">Vezi cererile ›</span></a>` : ''}
+  ${pend.count ? `<a class="card ann-banner" href="#utilizatori">${ic('users')}<span class="grow"><b>${pend.count} ${pend.count === 1 ? 'cerere nouă' : 'cereri noi'} de acces</b><br><span class="muted small">Locatari care au adăugat chiriași sau membri de familie și așteaptă aprobarea</span></span><span class="muted small">Vezi cererile ›</span></a>` : ''}
   <div class="grid g2">
    <div class="card stack"><div class="row between"><h3>De rezolvat</h3><a class="btn quiet sm" href="#tichete">Toate tichetele</a></div>
     <div class="list">${(tick.data || []).map(tRow).join('') || '<p class="muted">Niciun tichet deschis.</p>'}</div></div>
@@ -1069,8 +1071,8 @@ const PKLOC = { 'Avalon-Exterior': 'Afară', 'Avalon-Interior': 'Subteran', 'Ava
 const pkCell = acc => (acc || []).length ? (acc || []).slice().sort((a, b) => (a.location || '').localeCompare(b.location || '')).map(a => `<div class="pkc"><b>${esc(PKLOC[a.location] || a.location || '')}</b> · ${a.spaces ?? '?'} ${a.spaces === 1 ? 'loc' : 'locuri'}${(a.spots || []).length ? `<span class="muted small" data-notr>${esc(a.spots.join(', '))}</span>` : ''}</div>`).join('') : '<span class="muted small">—</span>';
 const pkOpt = a => `${a.metrici_name}${a.spots?.length ? '' : ''} · ${a.spaces ?? '?'} ${a.spaces === 1 ? 'loc' : 'locuri'}`;
 async function pageUsers() {
-  if (!isAdmin()) return pageMembers();
-  const all = await loadPeople(), q = norm(S.cache.uq || ''), b = S.cache.ublock || 'Toate', st = S.cache.ustat || 'toate', ac = S.cache.uacc || 'toate';
+  if (!isAdmin()) return pageMyUnits();
+  const [all, reqs] = await Promise.all([loadPeople(), loadReqs()]), q = norm(S.cache.uq || ''), b = S.cache.ublock || 'Toate', st = S.cache.ustat || 'toate', ac = S.cache.uacc || 'toate';
   const blocks = [...new Set(all.flatMap(p => activeUnits(p).map(m => blockOf(m.unit_code))))].filter(Boolean).sort();
   const list = all.filter(p => (b === 'Toate' || activeUnits(p).some(m => blockOf(m.unit_code) === b)) && (st === 'toate' || p.status === st) && (ac === 'toate' || p.access === ac)
     && (!q || norm([p.first_name, p.last_name, p.email, p.phone, ...(p.unit_members || []).map(m => m.unit_code), ...p.cars, ...(p.parking_accounts || []).flatMap(a => a.spots || [])].join(' ')).includes(q)))
@@ -1093,6 +1095,7 @@ async function pageUsers() {
   const opt = (v, cur, l) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
   return `<div class="head"><div class="stack" style="gap:4px"><h1>Utilizatori</h1><p class="muted">Toți cei din lista asociației. <b>Relația cu apartamentul</b> spune cine e persoana (proprietar, chiriaș, familie). <b>Accesul în aplicație</b> spune ce poate face: Locatar, Admin sau Pază. Le schimbi direct din tabel.</p></div>
    <div class="row"><button class="btn" data-act="u-add">${ic('plus')} Adaugă utilizator</button>${toInvite.length ? `<button class="btn ghost" data-act="inv-open">${ic('mail')} Trimite invitațiile (${toInvite.length})</button>` : ''}<button class="btn ghost" data-act="sale-open">${ic('home')} Schimbare proprietar</button></div></div>
+  ${reqCard(reqs)}
   ${pend.length ? `<div class="card stack" style="border-color:var(--warn)"><h3>Cereri de aprobat (${pend.length})</h3><p class="muted small">Persoanele adăugate de locatari în apartamentul lor (familie, chiriași) au nevoie de aprobare. După aprobare le poți trimite invitația.</p>
    <div class="list">${pend.map(p => `<div class="item">${ic('user')}<span class="grow stack" style="gap:2px"><span><b>${esc(fullName(p))}</b> · ${esc(REL[(p.unit_members || [])[0]?.relation] || '')}</span><span class="muted small">${esc((p.unit_members || []).map(m => m.unit_code).join(', '))} · ${esc(p.email)} · adăugat de ${esc(p.added_by_unit || 'locatari')}</span></span><button class="btn sm" data-act="u-approve" data-id="${p.id}">Aprobă</button><button class="btn quiet sm" data-act="u-reject" data-id="${p.id}">Respinge</button></div>`).join('')}</div></div>` : ''}
   <div class="card stack">
@@ -1177,6 +1180,81 @@ async function addUserModal() {
   });
 }
 // unitățile unui utilizator existent: ce are acum (apartamente, parcări, boxe, conturi Metrici) + adăugare / scoatere
+/* unitățile mele – locatarul își vede unitățile și cere adăugarea unui chiriaș / membru de familie (aprobă administrația) */
+const KINDL = { apartament: 'Apartament', townhouse: 'Casă', vila: 'Vilă', comercial: 'Spațiu comercial', parcare: 'Loc de parcare', boxa: 'Boxă', bicicleta: 'Loc de bicicletă', alta: 'Unitate' };
+const REQST = { in_asteptare: ['În așteptare', 'warn'], aprobat: ['Aprobată', 'ok'], respins: ['Respinsă', 'bad'], anulat: ['Anulată', 'line'] };
+const relTxt = r => (REL[r] || '').toLowerCase();
+async function pageMyUnits() {
+  const mine = [...S.units, ...(S.anexe || [])];
+  const head = `<div class="head"><div class="stack" style="gap:4px"><h1>Unitățile mele</h1><p class="muted">Apartamentul, locurile de parcare și boxele tale. Poți adăuga un chiriaș sau un membru de familie: cererea ajunge la administrație, iar până la aprobare o poți modifica sau anula.</p></div></div>`;
+  if (!mine.length) return head + `<div class="card"><p class="muted">Nu ai nicio unitate legată. Dacă e o greșeală, scrie-ne dintr-un tichet.</p></div>`;
+  const codes = mine.map(u => u.code);
+  const [{ data: mem, error }, { data: req, error: e2 }] = await Promise.all([
+    sb.from('unit_members').select('id, unit_code, relation, until, person_id, people(id, first_name, last_name, email, status)').in('unit_code', codes),
+    sb.from('member_requests').select('*').eq('requested_by', S.me.id).order('updated_at', { ascending: false }).limit(50)]);
+  if (error) throw error; if (e2) throw e2;
+  S.cache.myReq = req || [];
+  const today = dayStart(new Date());
+  const act = (mem || []).filter(m => (!m.until || new Date(m.until) >= today) && m.people && m.people.status !== 'fost');
+  const pend = S.cache.myReq.filter(r => r.status === 'in_asteptare');
+  const recent = S.cache.myReq.filter(r => ['aprobat', 'respins'].includes(r.status) && Date.now() - new Date(r.updated_at) < 30 * 864e5);
+  const card = u => {
+    const ppl = act.filter(m => m.unit_code === u.code).sort((a, b) => (a.person_id === S.me.id ? -1 : b.person_id === S.me.id ? 1 : 0)), rq = pend.filter(r => (r.units || []).includes(u.code));
+    const owner = u.relation === 'proprietar', res = !isAnexa(u.code) && !['parcare', 'boxa', 'bicicleta'].includes(u.kind);
+    return `<div class="card stack" style="gap:10px"><div class="row between" style="flex-wrap:wrap;gap:8px"><span class="stack" style="gap:2px"><b data-notr style="font-size:18px">${esc(u.code)}</b><span class="muted small">${esc(KINDL[u.kind] || 'Unitate')} · tu: ${esc(relTxt(u.relation))}</span></span>
+      ${owner || res ? `<button class="btn ghost sm" data-act="mu-add" data-u="${esc(u.code)}">${ic('plus')} ${owner ? 'Adaugă chiriaș' : 'Adaugă membru de familie'}</button>` : ''}</div>
+     <div class="list">${ppl.map(m => { const p = m.people, me = p.id === S.me.id; return `<div class="item">${ic('user')}<span class="grow stack" style="gap:2px"><span><b>${esc(fullName(p))}</b>${me ? ' <span class="chip ok">tu</span>' : ''}</span><span class="muted small">${esc(REL[m.relation] || '')}${p.email && !me ? ' · ' + esc(p.email) : ''}</span></span>
+       ${!me && owner && ['membru_familie', 'chirias'].includes(m.relation) ? `<button class="btn quiet sm" data-act="mem-remove" data-id="${p.id}" data-u="${esc(u.code)}">Scoate</button>` : ''}</div>`; }).join('')}
+      ${rq.map(r => `<div class="item" style="background:var(--warn-soft, #fff6e0)">${ic('user')}<span class="grow stack" style="gap:2px"><span><b>${esc(r.first_name + ' ' + r.last_name)}</b> <span class="chip warn">În așteptare</span></span><span class="muted small">${esc(REL[r.relation] || '')} · ${esc(r.email)}${(r.units || []).length > 1 ? ' · și pe ' + esc(r.units.filter(c => c !== u.code).join(', ')) : ''}${r.edits ? ' · modificată ' + fmtDT(r.updated_at) : ' · trimisă ' + fmtDT(r.created_at)}</span></span>
+       <button class="btn quiet sm" data-act="mu-edit" data-id="${r.id}">Modifică</button><button class="btn quiet sm" data-act="mu-cancel" data-id="${r.id}">Anulează</button></div>`).join('')}
+      ${!ppl.length && !rq.length ? '<p class="muted small">Nicio persoană.</p>' : ''}</div></div>`; };
+  const grp = (t, list) => list.length ? `<h3 style="margin:18px 0 6px">${t}</h3><div class="stack">${list.map(card).join('')}</div>` : '';
+  return head + `${recent.length ? `<div class="card stack" style="gap:6px"><b>Răspunsuri recente de la administrație</b>${recent.map(r => `<div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip ${REQST[r.status][1]}">${REQST[r.status][0]}</span><span>${esc(r.first_name + ' ' + r.last_name)} · ${esc(relTxt(r.relation))} · ${esc((r.units || []).join(', '))}</span>${r.admin_note ? `<span class="muted small">„${esc(r.admin_note)}”</span>` : ''}${r.status === 'aprobat' ? '<span class="muted small">Primește invitația pe email.</span>' : ''}</div>`).join('')}</div>` : ''}
+   ${grp('Apartament / casă', S.units)}${grp('Locuri de parcare', (S.anexe || []).filter(u => u.kind === 'parcare'))}${grp('Boxe și locuri de bicicletă', (S.anexe || []).filter(u => u.kind !== 'parcare'))}`;
+}
+function muModal(unit, rid) {
+  const r = rid ? (S.cache.myReq || []).find(x => x.id === rid) : null; if (rid && !r) return;
+  const mine = [...S.units, ...(S.anexe || [])], canTen = mine.filter(u => u.relation === 'proprietar'), canFam = S.units;
+  const sel0 = new Set(r ? r.units : [unit]);
+  const rel0 = r?.relation || (canTen.some(u => u.code === unit) ? 'chirias' : 'membru_familie');
+  openModal(`<form class="modal" id="mu-form" role="dialog" aria-modal="true" aria-labelledby="mu-h"><div class="row between"><h2 id="mu-h">${r ? 'Modifică cererea' : 'Adaugă o persoană'}</h2><button type="button" class="btn quiet sm" data-act="m-close" aria-label="Închide">${ic('x')}</button></div>
+    ${r ? '<p class="note"><span>Cererea e încă în așteptare. Ce modifici aici se actualizează în aceeași cerere la administrație.</span></p>' : ''}
+    <div class="form-grid"><label class="f">Cine este<select id="mu-rel">${canTen.length ? '<option value="chirias">Chiriaș</option>' : ''}${canFam.length ? '<option value="membru_familie">Membru de familie</option>' : ''}</select></label>
+     <label class="f">Prenume<input id="mu-first" required autocomplete="off"></label><label class="f">Nume<input id="mu-last" required autocomplete="off"></label>
+     <label class="f">E-mail<input id="mu-email" type="email" required autocomplete="off"></label><label class="f">Telefon (opțional)<input id="mu-phone" type="tel" autocomplete="off"></label></div>
+    <div class="stack" style="gap:6px"><b>Pe ce unități</b><div id="mu-units" class="stack" style="gap:4px"></div></div>
+    <p class="muted small" style="margin:0">Cererea ajunge la administrație. După aprobare, persoana primește invitația pe email.</p><p class="err" id="mu-err"></p>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="m-close">Renunță</button><button class="btn" type="submit">${r ? 'Salvează modificarea' : 'Trimite cererea'}</button></div></form>`, w => {
+    const box = w.querySelector('#mu-units'), relSel = w.querySelector('#mu-rel');
+    relSel.value = rel0;
+    if (r) { w.querySelector('#mu-first').value = r.first_name; w.querySelector('#mu-last').value = r.last_name; w.querySelector('#mu-email').value = r.email; w.querySelector('#mu-phone').value = r.phone || ''; }
+    const draw = () => {
+      const list = relSel.value === 'chirias' ? canTen : canFam, cur = new Set([...box.querySelectorAll('input:checked')].map(i => i.value)), keep = box.children.length ? cur : sel0;
+      box.innerHTML = list.map(u => `<label class="sw small"><span><b data-notr>${esc(u.code)}</b> · ${esc(KINDL[u.kind] || 'Unitate')}</span><input type="checkbox" class="mu-u" value="${esc(u.code)}" ${keep.has(u.code) ? 'checked' : ''}></label>`).join('') || '<span class="muted small">Nicio unitate potrivită.</span>';
+    };
+    draw(); relSel.addEventListener('change', draw);
+    w.querySelector('#mu-form').addEventListener('submit', async ev => {
+      ev.preventDefault(); const v = id => w.querySelector('#' + id).value.trim(), err = w.querySelector('#mu-err'), btn = ev.submitter || w.querySelector('button[type=submit]');
+      const units = [...box.querySelectorAll('.mu-u:checked')].map(i => i.value);
+      if (!units.length) { err.textContent = 'Alege cel puțin o unitate.'; return; }
+      const args = { p_units: units, p_relation: relSel.value, p_first: v('mu-first'), p_last: v('mu-last'), p_email: v('mu-email'), p_phone: v('mu-phone') };
+      btn.disabled = true;
+      const { error } = r ? await sb.rpc('modifica_cerere', { p_id: r.id, ...args }) : await sb.rpc('cere_persoana', args);
+      if (error) { btn.disabled = false; err.textContent = errMsg(error); return; }
+      closeModal(); toast(r ? 'Cererea a fost actualizată.' : 'Cererea a fost trimisă la administrație.'); render();
+    });
+  });
+}
+// administrație: cererile de chiriași / familie trimise de locatari
+async function loadReqs() {
+  const { data, error } = await sb.from('member_requests').select('*, req:people!member_requests_requested_by_fkey(first_name, last_name, email)').eq('status', 'in_asteptare').order('created_at');
+  if (error) { console.error(error); return []; }
+  return (S.cache.reqs = data || []);
+}
+const reqCard = reqs => reqs.length ? `<div class="card stack" style="border-color:var(--warn)"><h3>Cereri de la locatari (${reqs.length})</h3><p class="muted small">Chiriași și membri de familie adăugați de locatari pe unitățile lor. Dacă locatarul modifică o cerere, se actualizează aici, în aceeași cerere.</p>
+  <div class="list">${reqs.map(r => `<div class="item" style="flex-wrap:wrap">${ic('user')}<span class="grow stack" style="gap:2px"><span><b>${esc(r.first_name + ' ' + r.last_name)}</b> · ${esc(REL[r.relation] || '')} · <span data-notr>${esc((r.units || []).join(', '))}</span></span>
+   <span class="muted small">${esc(r.email)}${r.phone ? ' · ' + esc(r.phone) : ''} · cerută de ${esc(fullName(r.req || {}))} · ${fmtDT(r.created_at)}${r.edits ? ` · <b>modificată de ${r.edits} ${r.edits === 1 ? 'dată' : 'ori'}</b>, ultima ${fmtDT(r.updated_at)}` : ''}</span></span>
+   <span class="row" style="gap:6px"><button class="btn sm" data-act="mr-approve" data-id="${r.id}" data-inv="1">Aprobă și trimite invitația</button><button class="btn ghost sm" data-act="mr-approve" data-id="${r.id}">Doar aprobă</button><button class="btn quiet sm" data-act="mr-reject" data-id="${r.id}">Respinge</button></span></div>`).join('')}</div></div>` : '';
 async function unitsModal(id) {
   const p = (S.cache.people || []).find(x => x.id === id); if (!p) return;
   const ctx = await unitCtx(), cur = activeUnits(p), myAcc = ctx.acc.filter(a => a.person_id === id), yday = dateInput(new Date(Date.now() - 86400000));
@@ -1422,7 +1500,15 @@ async function pagesClick(a, b) {
       const { error } = await sb.from('people').update({ status: to, ...(a === 'u-activate' ? { until_date: null } : {}) }).eq('id', p.id); if (error) { toast(errMsg(error)); return true; }
       await audit(p.id, 'Status', USTAT[p.status]?.[0], USTAT[to][0]); p.status = to; closeModal();
       toast({ 'u-deactivate': 'Cont dezactivat.', 'u-activate': 'Cont reactivat.', 'u-approve': 'Cerere aprobată. Acum îi poți trimite invitația.', 'u-reject': 'Cerere respinsă.' }[a]); render(); } return true;
-    case 'mem-remove': if (!confirm('Scoți persoana din apartament?')) return true; { const { error } = await sb.rpc('remove_member', { p_unit: b.dataset.u, p_person: pid }); if (error) toast(errMsg(error)); else { toast('Persoana a fost scoasă.'); render(); } } return true;
+    case 'mu-add': muModal(b.dataset.u); return true;
+    case 'mu-edit': muModal(null, pid); return true;
+    case 'mu-cancel': if (!confirm('Anulezi cererea? Administrația nu o mai vede.')) return true; { const { error } = await sb.rpc('anuleaza_cerere', { p_id: pid }); if (error) toast(errMsg(error)); else { toast('Cererea a fost anulată.'); render(); } } return true;
+    case 'mr-approve': { b.disabled = true; const { data: np, error } = await sb.rpc('aproba_cerere', { p_id: pid }); if (error) { b.disabled = false; toast(errMsg(error)); return true; }
+      S.cache.people = null; let msg = 'Cerere aprobată. Persoana apare acum la Utilizatori.';
+      if (b.dataset.inv) { const { data: pp } = await sb.from('people').select('*').eq('id', np).maybeSingle(); if (pp && !pp.auth_user_id) { try { await invitePerson(pp); msg = 'Cerere aprobată și invitația a plecat la ' + pp.email + '.'; } catch (e) { msg = 'Cerere aprobată, dar invitația nu a plecat: ' + errMsg(e); } } else if (pp) msg = 'Cerere aprobată. Persoana avea deja cont, vede acum și unitățile noi.'; }
+      toast(msg); render(); } return true;
+    case 'mr-reject': { const note = prompt('Motivul respingerii (îl vede locatarul, opțional):', ''); if (note === null) return true; const { error } = await sb.rpc('respinge_cerere', { p_id: pid, p_note: note }); if (error) toast(errMsg(error)); else { toast('Cerere respinsă.'); render(); } } return true;
+    case 'mem-remove': if (!confirm('Scoți persoana de pe ' + b.dataset.u + '?')) return true; { const { error } = await sb.rpc('remove_member', { p_unit: b.dataset.u, p_person: pid }); if (error) toast(errMsg(error)); else { toast('Persoana a fost scoasă.'); render(); } } return true;
     case 'g-mark': guardModal(b.dataset.k, pid); return true;
     case 'g-fix': guardModal('fix', pid); return true;
     case 'g-del': if (!confirm('Ștergi marcajul pazei?')) return true; { const { error } = await sb.from('guard_marks').delete().eq('id', pid); if (error) toast(errMsg(error)); else { closeModal(); render(); } } return true;
@@ -1449,7 +1535,7 @@ async function render() {
   }
   if (S.route === 'tichet') { location.replace(`#tichete/${S.param || ''}`); return; }
   if (S.route === 'tichet-nou') { S.cache.newTicket = true; location.replace('#tichete'); return; }
-  const pages = { acasa: pageHome, parcare: pageParking, istoric: pageHistory, vehicule: pageVehicles, paza: pageGuard, tichete: pageTickets, anunturi: pageAnn, documente: pageDocs, contacte: pageContacts, profil: pageProfile, utilizatori: pageUsers, raport: pageReport, rezervari: pageReservations };
+  const pages = { unitati: pageMyUnits, acasa: pageHome, parcare: pageParking, istoric: pageHistory, vehicule: pageVehicles, paza: pageGuard, tichete: pageTickets, anunturi: pageAnn, documente: pageDocs, contacte: pageContacts, profil: pageProfile, utilizatori: pageUsers, raport: pageReport, rezervari: pageReservations };
   let fn = pages[S.route] || pageHome;
   if (S.route === 'paza' && !isGuard()) fn = pageHome;
   if (S.me.access === 'paza' && !['paza', 'contacte', 'profil'].includes(S.route)) fn = pageGuard;
